@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Large models live in the repo's (gitignored) models/ folder, e.g. on an external disk.
+export const MODELS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'models');
 
 // All personal data (DB, config, exports) lives outside the repo.
 export const HOME = process.env.DECK_TIME_HOME || path.join(os.homedir(), '.deck-time');
@@ -14,8 +18,9 @@ export const DEFAULTS = {
   port: 7331,
   dictation: {
     recorder: brew('rec'), // sox; records from the macOS default input
+    sox: brew('sox'),
     whisper: brew('whisper-cli'), // whisper.cpp
-    model: path.join(HOME, 'models', 'ggml-small.en.bin'),
+    model: path.join(MODELS_DIR, 'whisper', 'ggml-small.en.bin'),
     device: '', // blank = system default input (set in System Settings → Sound)
   },
   timekeeper: {

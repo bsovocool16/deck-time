@@ -27,9 +27,11 @@ function setup(transcript) {
   const notes = [];
   const spawnImpl = (cmd, args) => {
     calls.push({ cmd, args });
-    return cmd === 'rec' ? fakeProc({ stdout: null }) : fakeProc({ stdout: transcript });
+    if (cmd === 'rec') return fakeProc({ stdout: null });
+    if (cmd === 'sox') return fakeProc({ stdout: '' });
+    return fakeProc({ stdout: transcript });
   };
-  const config = { dictation: { recorder: 'rec', whisper: 'whisper-cli', model, device: '' } };
+  const config = { dictation: { recorder: 'rec', sox: 'sox', whisper: 'whisper-cli', model, device: '' } };
   const d = new Dictation({ getConfig: () => config, onText: (t, ctx) => notes.push([t, ctx.matterId]), spawnImpl });
   return { d, calls, notes };
 }
@@ -43,7 +45,9 @@ test('record then transcribe appends a note for the matter running at start', as
   assert.equal(text, 'Call with opposing counsel regarding the NDA.');
   assert.deepEqual(notes, [['Call with opposing counsel regarding the NDA.', 7]]);
   assert.equal(d.status, 'idle');
-  assert.ok(calls[1].args.includes('--prompt'));
+  assert.deepEqual(calls[1].args.slice(2), ['pad', '0.5', '0.3']);
+  assert.ok(calls[2].args.includes('--prompt'));
+  assert.match(calls[2].args[3], /-pad\.wav$/);
 });
 
 test('silence produces no note', async () => {

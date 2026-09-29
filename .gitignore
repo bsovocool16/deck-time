@@ -15,3 +15,6 @@ exports/
 # Stream Deck build output
 plugin/com.bsovocool.decktime.sdPlugin/bin/
 plugin/*.streamDeckPlugin
+
+# Large local models (Whisper, Ollama) — stored on this disk, never committed
+models/

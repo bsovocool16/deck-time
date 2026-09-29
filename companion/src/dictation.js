@@ -63,8 +63,11 @@ export class Dictation extends EventEmitter {
     proc.kill('SIGINT'); // sox finalizes the WAV header on SIGINT
     await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
 
+    const padded = this.file.replace(/\.wav$/, '-pad.wav');
     try {
-      const text = await this.transcribe(this.file);
+      // Leading silence stops whisper from dropping words spoken right at key-down.
+      const audio = (await this.#run(this.getConfig().dictation.sox, [this.file, padded, 'pad', '0.5', '0.3'])) ? padded : this.file;
+      const text = await this.transcribe(audio);
       if (text) this.onText(text, this.context);
       this.#set('idle', text ? null : 'Heard nothing');
       return text;
@@ -72,7 +75,7 @@ export class Dictation extends EventEmitter {
       this.#set('idle', e.message);
       throw Object.assign(e, { status: 500 });
     } finally {
-      fs.rm(this.file, { force: true }, () => {});
+      for (const f of [this.file, padded]) fs.rm(f, { force: true }, () => {});
     }
   }
 
@@ -80,6 +83,15 @@ export class Dictation extends EventEmitter {
     if (this.status === 'recording') return { text: await this.stop() };
     this.start(context);
     return { recording: true };
+  }
+
+  /** Resolves true on exit code 0, false on any failure. */
+  #run(cmd, args) {
+    return new Promise((resolve) => {
+      const p = this.spawn(cmd, args);
+      p.on('error', () => resolve(false));
+      p.on('exit', (code) => resolve(code === 0));
+    });
   }
 
   transcribe(file) {

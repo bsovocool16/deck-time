@@ -14,7 +14,9 @@ import { randomUUID } from 'node:crypto';
 //   wd        work date        "M/D/YYYY 12:00:00 AM"
 //   ed/md     entry/modified   "M/D/YYYY h:mm:ss AM" (export time)
 //   ref       GUID, unique per entry
-//   ss        "888888" + am zero-padded to 6 digits (observed; meaning unknown)
+//   ss        "888888" + am zero-padded to 6 digits (observed; prefix may encode
+//             billing type — both samples were 99xxxx matters)
+//   u1        jurisdiction code (constant, copied from the export)
 //
 // `ar` and `shortref` look like record ids Intapp assigns itself, so we omit
 // them. Everything else is copied from config.tim.defaults (taken verbatim

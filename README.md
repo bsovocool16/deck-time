@@ -41,7 +41,8 @@ npm test
 ### AI narratives (Ollama)
 
 ```bash
-brew install ollama && ollama serve   # or install the Ollama app
+brew install ollama
+scripts/ollama-serve.sh &             # keeps models in ./models/ollama (gitignored)
 ollama pull gemma3:12b                # any chat model works; set it in Settings
 ```
 
@@ -52,8 +53,8 @@ mark *ready* or *exported* on the same matter are fed back as style examples.
 
 ```bash
 brew install sox whisper-cpp
-mkdir -p ~/.deck-time/models
-curl -L -o ~/.deck-time/models/ggml-small.en.bin \
+mkdir -p models/whisper   # inside this repo, gitignored
+curl -L -o models/whisper/ggml-small.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
 ```
 
@@ -104,7 +105,8 @@ alphabetical, CRLF line endings.
 | `wd` | work date, `M/D/YYYY 12:00:00 AM` | entry date |
 | `ed` `md` | created / modified, `M/D/YYYY h:mm:ss AM` | export time |
 | `ref` | GUID | fresh per entry |
-| `ss` | `888888` + `am` zero-padded to 6 | computed (meaning unknown) |
+| `ss` | `888888` + `am` zero-padded to 6 | computed (prefix may encode billable / pro bono / non-billable; unconfirmed) |
+| `u1` | jurisdiction code | copied from your export (e.g. `007`) |
 | `ar` `shortref` | Intapp-assigned record ids | **omitted** |
 | everything else | constant metadata | copied from your export |
 
@@ -118,7 +120,7 @@ npm run tim:learn   -- ~/Downloads/export.TIM   # save to ~/.deck-time/config.js
 (or Settings → *Learn format from an Intapp export*).
 
 **Still to verify on a real import:** that Intapp accepts entries without
-`ar`/`shortref`, and what `u1` and `ss` mean. Test with one entry on a
+`ar`/`shortref`, and whether the `ss` prefix varies by billing type. Test with one entry on a
 non-billable matter first.
 
 ## Layout
