@@ -58,7 +58,7 @@ export class Dictate extends SingletonAction {
 	#renderAll(): void {
 		const s = companion.state;
 		let image: string;
-		if (!companion.online || !s) image = messageKey("deck-time", "offline", "#3f1d1d");
+		if (!companion.online || !s) image = messageKey("deck-time", "offline");
 		else if (!s.dictation) image = messageKey("Dictation", "unavailable");
 		else if (s.dictation.status === "recording") image = dictateKey("recording", s.now - (s.dictation.started_at ?? s.now));
 		else if (s.dictation.status === "transcribing") image = dictateKey("transcribing");

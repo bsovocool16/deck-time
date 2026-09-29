@@ -15,10 +15,10 @@
       "alignment": "center",
       "text-overflow": "ellipsis",
       "font": {
-        "size": 15,
-        "weight": 600
+        "size": 14,
+        "weight": 500
       },
-      "color": "#FFFFFF"
+      "color": "#8A8A84"
     },
     {
       "key": "value",
@@ -31,10 +31,10 @@
       ],
       "alignment": "center",
       "font": {
-        "size": 19,
+        "size": 20,
         "weight": 700
       },
-      "color": "#4ADE80"
+      "color": "#F2F2EF"
     }
   ]
 }

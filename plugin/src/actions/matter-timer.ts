@@ -73,11 +73,11 @@ export class MatterTimer extends SingletonAction<Settings> {
 	}
 
 	#image(settings: Settings, state: State | null): string {
-		if (!companion.online || !state) return messageKey("deck-time", "offline", "#3f1d1d");
+		if (!companion.online || !state) return messageKey("deck-time", "offline");
 		const id = Number(settings.matterId);
-		if (!id) return messageKey("Pick a matter", "", "#1f2937");
+		if (!id) return messageKey("Pick a matter");
 		const matter = state.matters.find((m) => m.id === id);
-		if (!matter) return messageKey("Matter missing", "", "#1f2937");
+		if (!matter) return messageKey("Matter missing");
 		const live = state.running?.matter_id === id;
 		return matterKey({
 			label: matter.label || matter.name,

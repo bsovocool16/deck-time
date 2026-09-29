@@ -19,15 +19,15 @@
 
   <section id="running" class="running idle">
     <div class="running-info">
-      <span class="dot"></span>
+      <span class="dot" aria-hidden="true"></span>
       <span id="running-label">No timer running</span>
       <span id="running-elapsed" class="elapsed"></span>
     </div>
     <form id="note-form" class="note-form">
-      <input id="note-input" placeholder="Quick note for the running matter (e.g. call w/ opp re NDA)" autocomplete="off">
+      <input id="note-input" placeholder="Note for the running matter" autocomplete="off">
       <button type="submit">Add note</button>
-      <button type="button" id="dictate-btn" title="Record a note with your mic (transcribed locally)">🎙 Dictate</button>
-      <button type="button" id="next-task-btn" title="Mark a task boundary: close the current task and start the next on the same matter (uses the note box as the new task's label)">⏭ Next task</button>
+      <button type="button" id="dictate-btn" title="Record a note with your microphone (transcribed on this Mac)">Dictate</button>
+      <button type="button" id="next-task-btn" title="Close the current task and start the next on the same matter. Text in the note box becomes the new task's label.">Next task</button>
       <button type="button" id="stop-btn" class="danger">Stop</button>
     </form>
   </section>
@@ -35,73 +35,79 @@
   <main>
     <!-- TODAY -->
     <section data-panel="today" class="panel">
-      <h2>Deck <small>click a key to start/stop; mirrors the Stream Deck</small></h2>
+      <div class="section-head">
+        <h2>Keys</h2>
+        <span class="hint">Click to start or stop. Mirrors the Stream Deck. Keys 1–8 on the keyboard work too.</span>
+      </div>
       <div id="deck" class="deck"></div>
 
-      <div class="day-head">
+      <div class="section-head day-head">
         <h2>Entries</h2>
         <div class="day-nav">
-          <button id="prev-day" aria-label="Previous day">&larr;</button>
+          <button id="prev-day" class="quiet" aria-label="Previous day">‹</button>
           <input type="date" id="day">
-          <button id="next-day" aria-label="Next day">&rarr;</button>
+          <button id="next-day" class="quiet" aria-label="Next day">›</button>
         </div>
         <div class="day-actions">
-          <button id="draft-all">Draft missing narratives</button>
-          <button id="export-tim" class="primary">Export .tim</button>
-          <button id="export-csv">Export .csv</button>
+          <button id="draft-all">Draft all</button>
+          <button id="export-csv">Export CSV</button>
+          <button id="export-tim" class="primary">Export .TIM</button>
         </div>
       </div>
       <div id="entries"></div>
 
       <details class="timeline">
-        <summary>Timeline (raw timer segments)</summary>
-        <table id="segments"><thead><tr><th>Matter</th><th>Task</th><th>Start</th><th>End</th><th>Minutes</th><th></th></tr></thead><tbody></tbody></table>
+        <summary>Timer segments</summary>
+        <table id="segments"><thead><tr><th>Matter</th><th>Task</th><th>Start</th><th>End</th><th class="num">Minutes</th><th></th></tr></thead><tbody></tbody></table>
         <form id="add-segment" class="inline-form">
           <select name="matter_id" required></select>
           <input type="time" name="start" required>
           <input type="time" name="end" required>
-          <button type="submit">Add manual time</button>
+          <button type="submit">Add time</button>
         </form>
       </details>
     </section>
 
     <!-- MATTERS -->
     <section data-panel="matters" class="panel hidden">
-      <h2>Matters</h2>
-      <form id="matter-form" class="card grid-form">
+      <div class="section-head"><h2>Matter</h2></div>
+      <form id="matter-form" class="grid-form">
         <input type="hidden" name="id">
-        <label>Name <input name="name" required placeholder="Alpha / Beta merger"></label>
-        <label>Key label <input name="label" maxlength="14" placeholder="Alpha M&A"></label>
-        <label>Client # <input name="client_no"></label>
-        <label>Matter # <input name="matter_no"></label>
+        <label class="span-2">Name <input name="name" required placeholder="Acme / Globex merger"></label>
+        <label>Key label <input name="label" maxlength="14" placeholder="Acme M&amp;A"></label>
+        <label>Color <input name="color" type="color" value="#2f5d8a"></label>
+        <label>Client no. <input name="client_no" placeholder="222222"></label>
+        <label>Matter no. <input name="matter_no" placeholder="00101"></label>
         <label>Task/activity codes <select name="code_set"></select></label>
-        <label>Default task code <input name="task_code" placeholder="e.g. C300 (optional)"></label>
-        <label>Default activity code <input name="activity_code" placeholder="e.g. A104 (optional)"></label>
         <label>Block billing
           <select name="block_billing">
             <option value="">Same as client</option>
-            <option value="prohibited">Prohibited for this matter</option>
-            <option value="allowed">Allowed for this matter</option>
+            <option value="prohibited">Prohibited</option>
+            <option value="allowed">Allowed</option>
           </select>
         </label>
-        <label class="wide">Matter billing guidelines <textarea name="guidelines" rows="2" placeholder="Added to the client's guidelines, e.g. &quot;Use L-series codes; no entries under 0.2&quot;"></textarea></label>
-        <label>Color <input name="color" type="color" value="#3b82f6"></label>
+        <label>Default task code <input name="task_code" placeholder="C300"></label>
+        <label>Default activity code <input name="activity_code" placeholder="A104"></label>
+        <label class="wide">Matter guidelines <textarea name="guidelines" rows="2" placeholder="Added to the client's guidelines"></textarea></label>
         <div class="form-actions">
           <button type="submit" class="primary">Save matter</button>
-          <button type="reset">Clear</button>
+          <button type="reset" class="quiet">Clear</button>
         </div>
       </form>
-      <h2>Client billing rules <small>remembered per client number and applied to all of its matters</small></h2>
+
+      <div class="section-head">
+        <h2>Client billing rules</h2>
+        <span class="hint">Remembered per client number and applied to all of its matters.</span>
+      </div>
       <div id="clients"></div>
 
-      <h2>All matters</h2>
-      <table id="matters-table"><thead><tr><th></th><th>Name</th><th>Label</th><th>Client-Matter</th><th>Codes</th><th>Billing</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="section-head"><h2>All matters</h2></div>
+      <table id="matters-table"><thead><tr><th></th><th>Name</th><th>Label</th><th>Client–matter</th><th>Codes</th><th>Billing</th><th></th></tr></thead><tbody></tbody></table>
     </section>
 
     <!-- SETTINGS -->
     <section data-panel="settings" class="panel hidden">
-      <h2>Settings</h2>
-      <form id="settings-form" class="card grid-form">
+      <form id="settings-form" class="grid-form">
         <h3>Timekeeper</h3>
         <label>Timekeeper ID <input name="timekeeper.id"></label>
         <label>Name <input name="timekeeper.name"></label>
@@ -111,25 +117,25 @@
         <label>Mode <select name="rounding.mode"><option value="up">Round up</option><option value="nearest">Nearest</option></select></label>
         <label>Minimum (hours) <input name="rounding.minimum" type="number" step="0.05" min="0"></label>
 
-        <h3>AI (local, via Ollama) <span id="ai-status" class="pill"></span></h3>
+        <h3>Local AI <span id="ai-status" class="status"></span></h3>
         <label>Ollama URL <input name="ai.baseUrl"></label>
         <label>Model <input name="ai.model" list="ai-models"><datalist id="ai-models"></datalist></label>
         <label class="wide">House style guide <textarea name="ai.styleGuide" rows="6"></textarea></label>
 
-        <h3>Intapp .TIM export <span id="tim-status" class="pill"></span></h3>
+        <h3>Intapp .TIM export <span id="tim-status" class="status"></span></h3>
         <label class="wide">Learn format from an Intapp export
           <input type="file" id="tim-learn" accept=".tim,.TIM,.txt">
-          <small>Export a few entries from Intapp Time (any matter) and pick the file here. The file is read locally to copy Intapp's constant fields and your timekeeper ID. Nothing is uploaded.</small>
+          <small>Export a few entries from Intapp Time and choose the file. It is read on this Mac to copy Intapp's constant fields and your timekeeper ID.</small>
         </label>
-        <label class="wide">Constant fields written on every entry (key=value, one per line)
-          <textarea name="tim.defaults" rows="8" spellcheck="false"></textarea>
+        <label class="wide">Constant fields (key=value, one per line)
+          <textarea name="tim.defaults" rows="8" spellcheck="false" class="mono"></textarea>
         </label>
         <div class="form-actions"><button type="submit" class="primary">Save settings</button></div>
       </form>
     </section>
   </main>
 
-  <div id="toast" class="toast hidden"></div>
+  <div id="toast" class="toast hidden" role="status"></div>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

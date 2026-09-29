@@ -36,7 +36,7 @@ export class NextTask extends SingletonAction {
 	#renderAll(): void {
 		const s = companion.state;
 		let image: string;
-		if (!companion.online || !s) image = messageKey("deck-time", "offline", "#3f1d1d");
+		if (!companion.online || !s) image = messageKey("deck-time", "offline");
 		else if (!s.running) image = nextTaskKey({ active: false });
 		else
 			image = nextTaskKey({

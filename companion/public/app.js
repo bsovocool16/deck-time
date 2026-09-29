@@ -96,13 +96,13 @@ function renderRunning() {
   const btn = $('#dictate-btn');
   btn.disabled = !d || (!r && d.status === 'idle') || d.status === 'transcribing';
   btn.classList.toggle('recording', d?.status === 'recording');
-  btn.textContent = d?.status === 'recording' ? `■ Stop (${clock(state.now - d.started_at)})` : d?.status === 'transcribing' ? 'Transcribing…' : '🎙 Dictate';
+  btn.textContent = d?.status === 'recording' ? `Stop recording ${clock(state.now - d.started_at)}` : d?.status === 'transcribing' ? 'Transcribing…' : 'Dictate';
   if (d?.error && d.error !== renderRunning.lastError) toast(d.error, d.error !== 'Heard nothing');
   renderRunning.lastError = d?.error;
   if (d?.status === 'idle' && renderRunning.lastDictation === 'transcribing') refreshDay();
   renderRunning.lastDictation = d?.status;
   $('#total').textContent = `${state.total_hours.toFixed(1)} h today`;
-  document.title = r ? `▶ ${clock(state.now - r.start_ms)} · ${r.matter.label}` : 'deck-time';
+  document.title = r ? `${clock(state.now - r.start_ms)} · ${r.matter.label || r.matter.name}` : 'deck-time';
 }
 
 function renderDeck() {
@@ -115,10 +115,10 @@ function renderDeck() {
       <span class="bar"></span>
     </button>`;
   });
-  while (keys.length < DECK_KEYS) keys.push('<div class="key empty">empty</div>');
+  while (keys.length < DECK_KEYS) keys.push('<div class="key empty"></div>');
   $('#deck').innerHTML = keys.join('');
   if (!state.matters.length) {
-    $('#deck').firstElementChild.outerHTML = '<button class="key empty" data-goto="matters">+ Add a matter</button>';
+    $('#deck').firstElementChild.outerHTML = '<button class="key empty" data-goto="matters">Add a matter</button>';
   }
 }
 
@@ -146,7 +146,7 @@ function codeRow(e) {
   return `<div class="codes ${missing ? 'missing' : ''}">
     <label>Task code<select name="task_code">${codeOptions(set.codes, e.task_code, e.matter.task_code)}</select></label>
     <label>Activity code<select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, e.matter.activity_code)}</select></label>
-    <button data-action="codes" title="Let the local AI pick codes from the narrative">✨ Suggest codes</button>
+    <button data-action="codes" title="Let the local AI pick codes from the narrative">Suggest codes</button>
   </div>`;
 }
 
@@ -167,8 +167,8 @@ function entryCard(e) {
   return `
     <div class="entry status-${e.status} ${main ? '' : 'part'}" style="--key-color:${esc(e.matter.color)}" data-matter="${e.matter_id}" data-part="${e.part}">
       <div class="entry-head">
-        ${main ? `<span class="name">${esc(e.matter.name)}</span><span class="cm">${esc(clientMatter(e.matter))}</span>${rulesBadge(e)}` : `<span class="part-label">↳ split entry ${e.part}</span>`}
-        ${e.running ? '<span class="live-badge">● running</span>' : ''}
+        ${main ? `<span class="name">${esc(e.matter.name)}</span><span class="cm">${esc(clientMatter(e.matter))}</span>${rulesBadge(e)}` : `<span class="part-label">Split entry ${e.part}</span>`}
+        ${e.running ? '<span class="live-badge">Running</span>' : ''}
         ${e.block_warning ? '<span class="warn-badge" title="This client prohibits block billing">looks block-billed</span>' : ''}
         <span class="spacer"></span>
         ${main ? `<span class="raw" title="Raw timer time">${clock(e.raw_ms)}</span>` : ''}
@@ -176,17 +176,17 @@ function entryCard(e) {
         <select name="status">
           ${['draft', 'ready', 'exported'].map((s) => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}
         </select>
-        ${main ? '' : '<button class="icon danger" data-action="del-part" title="Remove this split entry (its hours go back to the main entry)">✕</button>'}
+        ${main ? '' : '<button class="icon danger" data-action="del-part" title="Remove this split entry (its hours go back to the main entry)">Remove</button>'}
       </div>
       ${alloc}
-      <label>Notes (your shorthand)<textarea name="notes" rows="3" placeholder="e.g. tc w/ client re SPA reps; rev disclosure schedules">${esc(e.notes)}</textarea></label>
-      <label>Narrative (what gets exported)<textarea name="narrative" rows="3">${esc(e.narrative)}</textarea></label>
+      <label>Notes<textarea name="notes" rows="3" placeholder="e.g. tc w/ client re SPA reps; rev disclosure schedules">${esc(e.notes)}</textarea></label>
+      <label>Narrative (exported)<textarea name="narrative" rows="3">${esc(e.narrative)}</textarea></label>
       ${codeRow(e)}
       <div class="narr-actions">
         ${main && e.hours_override != null ? '<button data-action="reset-hours">Use timer hours</button>' : ''}
-        ${main ? '<button data-action="add-part" title="Split off a separate entry by hand">+ Split entry</button>' : ''}
-        ${main && (e.rules.no_block_billing || e.parts > 1) ? '<button data-action="propose-split" title="Let the local AI split the day into one entry per task">✂ Split into tasks</button>' : ''}
-        <button data-action="draft">✨ Draft narrative</button>
+        ${main ? '<button data-action="add-part" title="Split off a separate entry by hand">Add split</button>' : ''}
+        ${main && (e.rules.no_block_billing || e.parts > 1) ? '<button data-action="propose-split" title="Let the local AI split the day into one entry per task">Split into tasks</button>' : ''}
+        <button data-action="draft">Draft narrative</button>
       </div>
     </div>`;
 }
@@ -206,7 +206,7 @@ function proposalPanel(matterId, matter) {
         <input type="number" step="0.1" min="0.1" name="hours" value="${Number(e.hours).toFixed(1)}">
         <div class="split-text">${e.range ? `<small>${hhmm(e.range[0])}–${hhmm(e.range[1])}${e.notes ? ` · ${esc(e.notes)}` : ' · no notes: write this one'}</small>` : ''}<textarea name="narrative" rows="2" placeholder="Narrative">${esc(e.narrative)}</textarea></div>
         ${set ? `<select name="task_code">${codeOptions(set.codes, e.task_code, '')}</select><select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, '')}</select>` : ''}
-        <button class="icon danger" data-action="drop-row" title="Remove row">✕</button>
+        <button class="icon danger" data-action="drop-row" title="Remove row">Remove</button>
       </div>`,
       )
       .join('')}
@@ -327,11 +327,11 @@ async function renderSettings() {
     el.value = el.name === 'tim.defaults' ? Object.entries(v).map(([k, x]) => `${k}=${x}`).join('\n') : String(v ?? '');
   }
   const pill = $('#tim-status');
-  pill.className = 'pill ' + (config.timekeeper.id ? 'ok' : 'warn');
-  pill.textContent = config.timekeeper.id ? `timekeeper ${config.timekeeper.id}` : 'set timekeeper ID or learn from an export';
+  pill.className = 'status ' + (config.timekeeper.id ? 'ok' : 'warn');
+  pill.textContent = config.timekeeper.id ? `Timekeeper ${config.timekeeper.id}` : 'Set a timekeeper ID or learn it from an export';
   const ai = await api('/api/ai/status');
   const aiPill = $('#ai-status');
-  aiPill.className = 'pill ' + (ai.reachable && ai.installed ? 'ok' : 'bad');
+  aiPill.className = 'status ' + (ai.reachable && ai.installed ? 'ok' : 'bad');
   aiPill.textContent = !ai.reachable ? 'Ollama not running' : ai.installed ? `${ai.model} ready` : `run: ollama pull ${ai.model}`;
   $('#ai-models').innerHTML = ai.models.map((m) => `<option value="${esc(m)}">`).join('');
 }
@@ -384,7 +384,7 @@ document.addEventListener('click', guard(async (ev) => {
   }
   if (entry && t.dataset.action === 'codes') {
     t.disabled = true;
-    t.textContent = 'Thinking…';
+    t.textContent = 'Choosing…';
     try {
       await saveEntryField(entry, entry.querySelector('[name=narrative]'));
       await api(`${entryPath(entry)}/codes`, { method: 'POST', body: {} });
@@ -534,7 +534,7 @@ $('#draft-all').addEventListener('click', guard(async (ev) => {
     toast(`Drafted ${todo.length} narrative${todo.length > 1 ? 's' : ''}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Draft missing narratives';
+    btn.textContent = 'Draft all';
     refreshDay(true);
   }
 }));

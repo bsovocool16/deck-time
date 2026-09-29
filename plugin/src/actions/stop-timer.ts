@@ -26,7 +26,7 @@ export class StopTimer extends SingletonAction {
 
 	#renderAll(): void {
 		const s = companion.state;
-		const image = companion.online && s ? stopKey(!!s.running, s.total_hours) : messageKey("deck-time", "offline", "#3f1d1d");
+		const image = companion.online && s ? stopKey(!!s.running, s.total_hours) : messageKey("deck-time", "offline");
 		if (image === this.#last) return;
 		this.#last = image;
 		for (const a of this.actions) if (a.isKey()) void a.setImage(image);

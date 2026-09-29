@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS matters (
   matter_no     TEXT NOT NULL DEFAULT '',
   name          TEXT NOT NULL,
   label         TEXT NOT NULL DEFAULT '',   -- short text for the Stream Deck key
-  color         TEXT NOT NULL DEFAULT '#3b82f6',
+  color         TEXT NOT NULL DEFAULT '#2f5d8a',
   task_code     TEXT NOT NULL DEFAULT '',
   activity_code TEXT NOT NULL DEFAULT '',
   code_set      TEXT NOT NULL DEFAULT '',   -- '' = no task/activity codes; else a key in config.codes.taskSets
