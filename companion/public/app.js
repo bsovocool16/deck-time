@@ -128,6 +128,24 @@ async function refreshDay(force = false) {
   renderSegments(segs);
 }
 
+function codeOptions(codes, selected, fallback) {
+  const opts = Object.entries(codes).map(([c, label]) => `<option value="${c}" ${c === selected ? 'selected' : ''}>${c} · ${esc(label)}</option>`);
+  const none = fallback ? `matter default (${fallback})` : 'choose…';
+  return `<option value="">${esc(none)}</option>${opts.join('')}`;
+}
+
+/** Task/activity pickers, only for matters that use UTBMS codes. */
+function codeRow(e) {
+  const set = config?.codes.taskSets[e.matter.code_set];
+  if (!set) return '';
+  const missing = !e.task || !e.activity;
+  return `<div class="codes ${missing ? 'missing' : ''}">
+    <label>Task code<select name="task_code">${codeOptions(set.codes, e.task_code, e.matter.task_code)}</select></label>
+    <label>Activity code<select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, e.matter.activity_code)}</select></label>
+    <button data-action="codes" title="Let the local AI pick codes from the narrative">✨ Suggest codes</button>
+  </div>`;
+}
+
 function renderEntries({ entries }) {
   if (!entries.length) {
     $('#entries').innerHTML = `<div class="empty-state">No time recorded for ${day}. Tap a key to start a timer.</div>`;
@@ -150,6 +168,7 @@ function renderEntries({ entries }) {
       </div>
       <label>Notes (your shorthand)<textarea name="notes" rows="3" placeholder="e.g. tc w/ client re SPA reps; rev disclosure schedules">${esc(e.notes)}</textarea></label>
       <label>Narrative (what gets exported)<textarea name="narrative" rows="3">${esc(e.narrative)}</textarea></label>
+      ${codeRow(e)}
       <div class="narr-actions">
         ${e.hours_override != null ? '<button data-action="reset-hours">Use timer hours</button>' : ''}
         <button data-action="draft">✨ Draft narrative</button>
@@ -196,7 +215,7 @@ async function renderMatters() {
       (m) => `<tr data-id="${m.id}" style="${m.archived ? 'opacity:.5' : ''}">
       <td><span class="swatch" style="background:${esc(m.color)}"></span></td>
       <td>${esc(m.name)}</td><td>${esc(m.label)}</td><td>${esc(clientMatter(m))}</td>
-      <td>${esc([m.task_code, m.activity_code].filter(Boolean).join(' / '))}</td>
+      <td>${m.code_set ? esc([config?.codes.taskSets[m.code_set]?.label ?? m.code_set, m.task_code, m.activity_code].filter(Boolean).join(' · ')) : '<span style="opacity:.5">none</span>'}</td>
       <td><button data-action="edit">Edit</button> <button data-action="archive">${m.archived ? 'Restore' : 'Archive'}</button></td>
     </tr>`,
     )
@@ -271,6 +290,17 @@ document.addEventListener('click', guard(async (ev) => {
     try {
       await saveEntryField(entry, entry.querySelector('[name=notes]'));
       await api(`/api/entries/${day}/${entry.dataset.matter}/narrate`, { method: 'POST', body: {} });
+    } finally {
+      await refreshDay(true);
+    }
+    return;
+  }
+  if (entry && t.dataset.action === 'codes') {
+    t.disabled = true;
+    t.textContent = 'Thinking…';
+    try {
+      await saveEntryField(entry, entry.querySelector('[name=narrative]'));
+      await api(`/api/entries/${day}/${entry.dataset.matter}/codes`, { method: 'POST', body: {} });
     } finally {
       await refreshDay(true);
     }
@@ -430,4 +460,16 @@ document.addEventListener('keydown', guard(async (ev) => {
 }));
 
 $('#day').value = day;
-connect();
+api('/api/config')
+  .then((c) => (config = c))
+  .catch(() => {})
+  .finally(() => {
+    fillCodeSetOptions();
+    connect();
+  });
+
+function fillCodeSetOptions() {
+  const sets = config?.codes.taskSets ?? {};
+  $('#matter-form [name=code_set]').innerHTML =
+    '<option value="">None</option>' + Object.entries(sets).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');
+}

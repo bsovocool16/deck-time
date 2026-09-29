@@ -37,17 +37,22 @@ export function cleanNarrative(text) {
 
 export async function draftNarrative({ config, matter, notes, hours, recent = [], fetchImpl = fetch }) {
   if (!notes?.trim()) throw Object.assign(new Error('Add a few words of notes first'), { status: 400 });
-  const { baseUrl, model, styleGuide, examples } = config.ai;
+  const { styleGuide, examples } = config.ai;
   // Past narratives for this matter keep terminology consistent.
   const allExamples = [...examples, ...recent.filter((r) => r.notes)].slice(-6);
   const messages = buildPrompt({ matter, notes, hours, styleGuide, examples: allExamples });
 
+  return cleanNarrative(await ollamaChat({ config, messages, fetchImpl }));
+}
+
+async function ollamaChat({ config, messages, format, fetchImpl }) {
+  const { baseUrl, model } = config.ai;
   let res;
   try {
     res = await fetchImpl(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, stream: false, options: { temperature: 0.2 } }),
+      body: JSON.stringify({ model, messages, stream: false, format, options: { temperature: 0.2 } }),
       signal: AbortSignal.timeout(120_000),
     });
   } catch (e) {
@@ -59,7 +64,7 @@ export async function draftNarrative({ config, matter, notes, hours, recent = []
     throw Object.assign(new Error(`Ollama error ${res.status}: ${body.slice(0, 200)}${hint}`), { status: 502 });
   }
   const data = await res.json();
-  return cleanNarrative(data.message?.content ?? '');
+  return data.message?.content ?? '';
 }
 
 export async function aiStatus(config, fetchImpl = fetch) {
@@ -71,4 +76,46 @@ export async function aiStatus(config, fetchImpl = fetch) {
   } catch {
     return { reachable: false, model: config.ai.model, installed: false, models: [] };
   }
+}
+
+/**
+ * Pick a UTBMS task + activity code for a narrative. Ollama's structured output
+ * (JSON schema with enums) guarantees the answer is one of the allowed codes.
+ */
+export async function suggestCodes({ config, narrative, codes, fetchImpl = fetch }) {
+  if (!narrative?.trim()) throw Object.assign(new Error('Draft or write a narrative first'), { status: 400 });
+  const list = (obj) => Object.entries(obj).map(([code, label]) => `${code}: ${label}`).join('\n');
+  const messages = [
+    {
+      role: 'system',
+      content: [
+        'You assign UTBMS billing codes to a lawyer\'s time entry.',
+        'Choose the single best task code and the single best activity code for the work described.',
+        'If the entry mixes tasks, choose the code for the predominant work.',
+        `Task codes:\n${list(codes.tasks)}`,
+        `Activity codes:\n${list(codes.activities)}`,
+      ].join('\n\n'),
+    },
+    { role: 'user', content: `Time entry: ${narrative}` },
+  ];
+  const format = {
+    type: 'object',
+    properties: {
+      task_code: { type: 'string', enum: Object.keys(codes.tasks) },
+      activity_code: { type: 'string', enum: Object.keys(codes.activities) },
+    },
+    required: ['task_code', 'activity_code'],
+  };
+  const res = await ollamaChat({ config, messages, format, fetchImpl });
+  let out;
+  try {
+    out = JSON.parse(res);
+  } catch {
+    throw Object.assign(new Error('Model returned invalid JSON for codes'), { status: 502 });
+  }
+  // Belt and braces in case a model ignores the schema.
+  if (!(out.task_code in codes.tasks) || !(out.activity_code in codes.activities)) {
+    throw Object.assign(new Error(`Model suggested unknown codes: ${out.task_code}/${out.activity_code}`), { status: 502 });
+  }
+  return { task_code: out.task_code, activity_code: out.activity_code };
 }

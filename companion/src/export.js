@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 //   ss        "888888" + am zero-padded to 6 digits (observed; prefix may encode
 //             billing type — both samples were 99xxxx matters)
 //   u1        jurisdiction code (constant, copied from the export)
+//   u5 / u6   UTBMS task / activity code — only on matters that require them
 //
 // `ar` and `shortref` look like record ids Intapp assigns itself, so we omit
 // them. Everything else is copied from config.tim.defaults (taken verbatim
@@ -78,6 +79,8 @@ export function timRecord(entry, config, { now = Date.now(), uuid = randomUUID }
     ref: uuid(),
     ss: `${config.tim.ssPrefix}${pad(am, 6)}`,
   };
+  if (entry.task) record.u5 = entry.task;
+  if (entry.activity) record.u6 = entry.activity;
   return record;
 }
 
@@ -100,6 +103,7 @@ export function validateForTim(entries, config) {
     if (!e.narrative?.trim()) problems.push(`${e.matter.name}: missing narrative`);
     if (!e.matter.client_no) problems.push(`${e.matter.name}: missing client number`);
     if (!e.matter.matter_no) problems.push(`${e.matter.name}: missing matter number`);
+    if (e.matter.code_set && (!e.task || !e.activity)) problems.push(`${e.matter.name}: needs task/activity codes`);
   }
   return problems;
 }
@@ -112,6 +116,8 @@ const CSV_COLUMNS = [
   ['matter', (e) => e.matter.matter_no],
   ['matter_name', (e) => e.matter.name],
   ['hours', (e) => e.hours.toFixed(1)],
+  ['task_code', (e) => e.task ?? ''],
+  ['activity_code', (e) => e.activity ?? ''],
   ['narrative', (e) => e.narrative],
 ];
 
@@ -142,7 +148,7 @@ export function parseTim(text) {
     );
 }
 
-const PER_ENTRY = new Set(['am', 'ar', 'cl', 'ma', 'na', 'tk', 'op', 'lmb', 'wd', 'ed', 'md', 'ref', 'shortref', 'ss']);
+const PER_ENTRY = new Set(['am', 'ar', 'cl', 'ma', 'na', 'tk', 'op', 'lmb', 'wd', 'ed', 'md', 'ref', 'shortref', 'ss', 'u5', 'u6']);
 
 /** Summarize a .TIM file and derive config (defaults + timekeeper) from it. */
 export function learnFromTim(text) {

@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aiStatus, draftNarrative } from './ai.js';
+import { aiStatus, draftNarrative, suggestCodes } from './ai.js';
+import { codesFor } from './codes.js';
 import { Dictation } from './dictation.js';
 import { DB_PATH, EXPORT_DIR, loadConfig, saveConfig, deepMerge } from './config.js';
 import { exportable, learnFromTim, toCsv, toTim, validateForTim } from './export.js';
@@ -60,7 +61,24 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
         recent: store.recentNarratives(matterId),
         fetchImpl,
       });
-      return store.updateEntry(date, matterId, { narrative });
+      const saved = store.updateEntry(date, matterId, { narrative });
+      // Fill codes too, unless the user already chose them for this entry.
+      const codes = codesFor(store.getMatter(matterId), getConfig());
+      if (!codes || (saved.task_code && saved.activity_code)) return saved;
+      try {
+        return store.updateEntry(date, matterId, await suggestCodes({ config: getConfig(), narrative, codes, fetchImpl }));
+      } catch (e) {
+        console.warn(`code suggestion failed: ${e.message}`);
+        return saved;
+      }
+    }],
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/codes$/, async (_, __, [date, id]) => {
+      const matterId = +id;
+      const codes = codesFor(store.getMatter(matterId), getConfig());
+      if (!codes) throw httpError(400, 'This matter does not use task/activity codes');
+      const { narrative, notes } = store.getEntry(date, matterId);
+      const picked = await suggestCodes({ config: getConfig(), narrative: narrative || notes, codes, fetchImpl });
+      return store.updateEntry(date, matterId, picked);
     }],
     ['POST', /^\/api\/export$/, (b) => exportDay(b)],
     ['GET', /^\/api\/ai\/status$/, () => aiStatus(getConfig(), fetchImpl)],

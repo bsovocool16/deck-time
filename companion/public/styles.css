@@ -211,3 +211,7 @@ td input[type=time] { width: auto; }
   .entry .narr-actions { grid-column: 1; }
   .day-actions { margin-left: 0; }
 }
+
+.entry .codes { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 14px; align-items: end; }
+.entry .codes.missing select { border-color: var(--warn-text); }
+@media (max-width: 720px) { .entry .codes { grid-template-columns: 1fr; } }

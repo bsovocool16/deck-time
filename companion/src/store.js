@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS matters (
   color         TEXT NOT NULL DEFAULT '#3b82f6',
   task_code     TEXT NOT NULL DEFAULT '',
   activity_code TEXT NOT NULL DEFAULT '',
+  code_set      TEXT NOT NULL DEFAULT '',  -- '' = no task/activity codes; else a key in config.codes.taskSets
   archived      INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL
 );
@@ -33,6 +34,8 @@ CREATE TABLE IF NOT EXISTS entries (
   notes          TEXT NOT NULL DEFAULT '',
   narrative      TEXT NOT NULL DEFAULT '',
   hours_override REAL,
+  task_code      TEXT NOT NULL DEFAULT '',   -- blank = use the matter's default
+  activity_code  TEXT NOT NULL DEFAULT '',
   status         TEXT NOT NULL DEFAULT 'draft',  -- draft | ready | exported
   exported_at    INTEGER,
   updated_at     INTEGER NOT NULL,
@@ -40,8 +43,15 @@ CREATE TABLE IF NOT EXISTS entries (
 );
 `;
 
-const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'archived'];
-const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'status'];
+const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'archived'];
+const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'status'];
+
+// Columns added after the first release: [table, column, definition]
+const MIGRATIONS = [
+  ['matters', 'code_set', "TEXT NOT NULL DEFAULT ''"],
+  ['entries', 'task_code', "TEXT NOT NULL DEFAULT ''"],
+  ['entries', 'activity_code', "TEXT NOT NULL DEFAULT ''"],
+];
 const STATUSES = new Set(['draft', 'ready', 'exported']);
 
 export class Store extends EventEmitter {
@@ -50,6 +60,10 @@ export class Store extends EventEmitter {
     this.db = new DatabaseSync(dbPath);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    for (const [table, col, def] of MIGRATIONS) {
+      const cols = this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      if (!cols.includes(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+    }
     this.getConfig = getConfig;
     this.now = now;
   }
@@ -184,7 +198,9 @@ export class Store extends EventEmitter {
 
   getEntry(date, matterId) {
     const row = this.db.prepare('SELECT * FROM entries WHERE date = ? AND matter_id = ?').get(date, matterId);
-    return row ? plain(row) : { date, matter_id: matterId, notes: '', narrative: '', hours_override: null, status: 'draft', exported_at: null };
+    return row
+      ? plain(row)
+      : { date, matter_id: matterId, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', status: 'draft', exported_at: null };
   }
 
   updateEntry(date, matterId, input) {
@@ -195,13 +211,14 @@ export class Store extends EventEmitter {
     if (patch.status === 'exported') next.exported_at = this.now();
     this.db
       .prepare(
-        `INSERT INTO entries (date, matter_id, notes, narrative, hours_override, status, exported_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO entries (date, matter_id, notes, narrative, hours_override, task_code, activity_code, status, exported_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (date, matter_id) DO UPDATE SET
            notes = excluded.notes, narrative = excluded.narrative, hours_override = excluded.hours_override,
+           task_code = excluded.task_code, activity_code = excluded.activity_code,
            status = excluded.status, exported_at = excluded.exported_at, updated_at = excluded.updated_at`,
       )
-      .run(date, matterId, next.notes, next.narrative, next.hours_override, next.status, next.exported_at, this.now());
+      .run(date, matterId, next.notes, next.narrative, next.hours_override, next.task_code, next.activity_code, next.status, next.exported_at, this.now());
     this.emitChange();
     return this.getEntry(date, matterId);
   }
@@ -223,9 +240,14 @@ export class Store extends EventEmitter {
     const entries = [...byMatter.entries()].map(([matterId, rawMs]) => {
       const entry = this.getEntry(date, matterId);
       const computed = roundHours(rawMs, rounding);
+      const matter = this.getMatter(matterId);
+      const usesCodes = !!matter.code_set;
       return {
         ...entry,
-        matter: this.getMatter(matterId),
+        matter,
+        // Effective codes: the entry's own, else the matter default; none if the matter doesn't use codes.
+        task: usesCodes ? entry.task_code || matter.task_code : '',
+        activity: usesCodes ? entry.activity_code || matter.activity_code : '',
         raw_ms: rawMs,
         computed_hours: computed,
         hours: entry.hours_override ?? computed,

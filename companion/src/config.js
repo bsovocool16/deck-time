@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ACTIVITY_CODES, TASK_SETS } from './codes.js';
 
 // Large models live in the repo's (gitignored) models/ folder, e.g. on an external disk.
 export const MODELS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'models');
@@ -52,6 +53,11 @@ export const DEFAULTS = {
           'Telephone conference with opposing counsel regarding comments to non-disclosure agreement; revised non-disclosure agreement to reflect same.',
       },
     ],
+  },
+  // UTBMS codes for matters that require them (Intapp u5 = task, u6 = activity).
+  codes: {
+    activities: ACTIVITY_CODES,
+    taskSets: TASK_SETS,
   },
   tim: {
     // Constant fields copied verbatim from a real Intapp Time export.

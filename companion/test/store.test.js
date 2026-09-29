@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DEFAULTS } from '../src/config.js';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { intappDateTime, learnFromTim, parseTim, toCsv, toTim, validateForTim } from '../src/export.js';
-import { buildPrompt, cleanNarrative, draftNarrative } from '../src/ai.js';
+import { buildPrompt, cleanNarrative, draftNarrative, suggestCodes } from '../src/ai.js';
 import { Store } from '../src/store.js';
 import { dayBounds, formatDate, roundHours } from '../src/time.js';
 
@@ -206,4 +209,98 @@ test('draftNarrative explains when Ollama is down', async () => {
     throw new Error('ECONNREFUSED');
   };
   await assert.rejects(draftNarrative({ config: DEFAULTS, matter: { name: 'A' }, notes: 'x', fetchImpl }), /Is it running/);
+});
+
+// ---------- UTBMS codes ----------
+
+const CODED_SAMPLE = fs.readFileSync(new URL('../../docs/samples/intapp-export-coded.example.tim', import.meta.url), 'utf8');
+
+test('toTim writes u5/u6 for coded matters, matching a real coded line', () => {
+  const entry = {
+    date: '2026-09-29',
+    hours: 1.2,
+    narrative: 'Test entry.',
+    task: 'C300',
+    activity: 'A104',
+    matter: { client_no: '222222', matter_no: '00101', name: 'Coded', code_set: 'counseling' },
+  };
+  const out = toTim([entry], timConfig, { ...fixed, uuid: () => '00000000-0000-4000-8000-000000000003' });
+  const expected = CODED_SAMPLE.split('\r\n')[0]
+    .replace('ar=100000003|', '')
+    .replace('shortref=20000003|', '')
+    .replace('md=9/29/2026 11:12:46 PM', 'md=9/29/2026 10:12:16 PM') + '\r\n';
+  assert.equal(out, expected);
+});
+
+test('uncoded matters never get u5/u6', () => {
+  const [rec] = parseTim(toTim([sampleEntry], timConfig, fixed));
+  assert.equal('u5' in rec, false);
+  assert.equal('u6' in rec, false);
+});
+
+test('validateForTim requires codes on coded matters', () => {
+  const e = { ...sampleEntry, narrative: 'x', task: 'C300', activity: '', matter: { ...sampleEntry.matter, code_set: 'counseling' } };
+  assert.deepEqual(validateForTim([e], timConfig), ['Alpha: needs task/activity codes']);
+});
+
+test('learnFromTim treats u5/u6 as per-entry, not constants', () => {
+  const l = learnFromTim(SAMPLE + CODED_SAMPLE);
+  assert.equal('u5' in l.defaults, false);
+  assert.deepEqual(l.unknownVarying, []);
+});
+
+test('entries inherit matter default codes; entry codes override', () => {
+  const { store, clock } = setup();
+  const m = store.createMatter({ name: 'Coded', code_set: 'counseling', task_code: 'C300', activity_code: 'A104' });
+  const plain = store.createMatter({ name: 'Plain', task_code: 'C100' });
+  for (const id of [m.id, plain.id]) {
+    store.toggle(id);
+    clock.advance(6 * MIN);
+  }
+  store.stop();
+  let day = store.day('2026-09-29');
+  const coded = day.entries.find((e) => e.matter_id === m.id);
+  assert.deepEqual([coded.task, coded.activity], ['C300', 'A104']);
+  assert.deepEqual([day.entries.find((e) => e.matter_id === plain.id).task], ['']); // no code_set → no codes
+  store.updateEntry('2026-09-29', m.id, { activity_code: 'A106' });
+  day = store.day('2026-09-29');
+  assert.equal(day.entries.find((e) => e.matter_id === m.id).activity, 'A106');
+});
+
+test('old databases gain the new columns', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dt-mig-'));
+  const file = path.join(dir, 'old.db');
+  const db = new DatabaseSync(file);
+  db.exec(`CREATE TABLE matters (id INTEGER PRIMARY KEY, client_no TEXT NOT NULL DEFAULT '', matter_no TEXT NOT NULL DEFAULT '', name TEXT NOT NULL,
+    label TEXT NOT NULL DEFAULT '', color TEXT NOT NULL DEFAULT '#3b82f6', task_code TEXT NOT NULL DEFAULT '', activity_code TEXT NOT NULL DEFAULT '',
+    archived INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+    CREATE TABLE entries (date TEXT NOT NULL, matter_id INTEGER NOT NULL, notes TEXT NOT NULL DEFAULT '', narrative TEXT NOT NULL DEFAULT '',
+    hours_override REAL, status TEXT NOT NULL DEFAULT 'draft', exported_at INTEGER, updated_at INTEGER NOT NULL, PRIMARY KEY (date, matter_id));
+    INSERT INTO matters (name, created_at) VALUES ('Legacy', 0);`);
+  db.close();
+  const store = new Store(file, () => DEFAULTS);
+  const m = store.listMatters()[0];
+  assert.equal(m.code_set, '');
+  store.updateEntry('2026-09-29', m.id, { task_code: 'C100' });
+  assert.equal(store.getEntry('2026-09-29', m.id).task_code, 'C100');
+  store.close();
+});
+
+test('suggestCodes constrains the model to allowed codes', async () => {
+  let body;
+  const fetchImpl = async (_url, opts) => {
+    body = JSON.parse(opts.body);
+    return { ok: true, json: async () => ({ message: { content: '{"task_code":"C300","activity_code":"A104"}' } }) };
+  };
+  const codes = { tasks: DEFAULTS.codes.taskSets.counseling.codes, activities: DEFAULTS.codes.activities };
+  const out = await suggestCodes({ config: DEFAULTS, narrative: 'Reviewed and analyzed merger agreement.', codes, fetchImpl });
+  assert.deepEqual(out, { task_code: 'C300', activity_code: 'A104' });
+  assert.deepEqual(body.format.properties.task_code.enum, ['C100', 'C200', 'C300', 'C400']);
+  assert.equal(body.format.properties.activity_code.enum.length, 11);
+});
+
+test('suggestCodes rejects codes outside the list', async () => {
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ message: { content: '{"task_code":"L120","activity_code":"A104"}' } }) });
+  const codes = { tasks: DEFAULTS.codes.taskSets.counseling.codes, activities: DEFAULTS.codes.activities };
+  await assert.rejects(suggestCodes({ config: DEFAULTS, narrative: 'x', codes, fetchImpl }), /unknown codes/);
 });

@@ -89,6 +89,15 @@ In the Stream Deck app, drag from the **deck-time** category:
 Suggested Neo layout: 5 matter keys + Dictate + Stop + Review, with the info
 bar on top. Use the Neo's page buttons for more matters.
 
+## Task / activity codes
+
+For matters that require UTBMS codes, set **Task/activity codes** on the matter
+(Counseling or Litigation; edit or add sets under `codes` in
+`~/.deck-time/config.json`). Drafting a narrative also picks codes with the
+local model, constrained to the allowed list. Review them on the entry, or hit
+✨ **Suggest codes** again after editing the narrative. Matter defaults fill in
+anything left blank, and export refuses a coded matter with missing codes.
+
 ## Intapp Time `.TIM` format
 
 Reverse-engineered from a real export (see
@@ -105,8 +114,9 @@ alphabetical, CRLF line endings.
 | `wd` | work date, `M/D/YYYY 12:00:00 AM` | entry date |
 | `ed` `md` | created / modified, `M/D/YYYY h:mm:ss AM` | export time |
 | `ref` | GUID | fresh per entry |
-| `ss` | `888888` + `am` zero-padded to 6 | computed (prefix may encode billable / pro bono / non-billable; unconfirmed) |
+| `ss` | `888888` + `am` zero-padded to 6 | computed (prefix constant across billable and non-billable samples) |
 | `u1` | jurisdiction code | copied from your export (e.g. `007`) |
+| `u5` / `u6` | UTBMS task / activity code | only on matters that use codes |
 | `ar` `shortref` | Intapp-assigned record ids | **omitted** |
 | everything else | constant metadata | copied from your export |
 
@@ -120,7 +130,8 @@ npm run tim:learn   -- ~/Downloads/export.TIM   # save to ~/.deck-time/config.js
 (or Settings → *Learn format from an Intapp export*).
 
 **Still to verify on a real import:** that Intapp accepts entries without
-`ar`/`shortref`, and whether the `ss` prefix varies by billing type. Test with one entry on a
+`ar`/`shortref`. (`ar` changes when an entry is edited in Intapp, so it's an
+internal record id.) Test with one entry on a
 non-billable matter first.
 
 ## Layout
