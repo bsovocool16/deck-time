@@ -111,3 +111,17 @@ export function dictateKey(status: "idle" | "recording" | "transcribing" | "disa
 	const dim = status === "disabled";
 	return svg(`${MIC(dim ? "#4b5563" : "#fff")}<text x="72" y="128" text-anchor="middle" ${FONT} font-size="20" font-weight="700" fill="${dim ? "#6b7280" : "#fff"}">Dictate</text>`, "#111418");
 }
+
+export function nextTaskKey(opts: { active: boolean; task?: number; elapsedMs?: number; color?: string }): string {
+	const fg = opts.active ? "#fff" : "#4b5563";
+	const icon = `<path d="M34 30 L74 58 L34 86 Z" fill="${fg}"/><path d="M70 30 L110 58 L70 86 Z" fill="${fg}"/>`;
+	if (!opts.active) {
+		return svg(`${icon}<text x="72" y="124" text-anchor="middle" ${FONT} font-size="20" font-weight="700" fill="#6b7280">Next task</text>`, "#111418");
+	}
+	return svg(
+		`${icon}<rect x="0" y="0" width="144" height="8" fill="${opts.color ?? "#3b82f6"}"/>
+<text x="72" y="116" text-anchor="middle" ${FONT} font-size="20" font-weight="700" fill="#fff">Task ${opts.task}</text>
+<text x="72" y="136" text-anchor="middle" ${FONT} font-size="16" fill="#9ca3af">${clock(opts.elapsedMs ?? 0)}</text>`,
+		"#111418",
+	);
+}

@@ -246,3 +246,116 @@ test('server: propose → apply → export warns on block-billed narratives', as
     store.close();
   }
 });
+
+// ---------- Next task ----------
+
+test('nextTask closes the current task and starts the next on the same matter', () => {
+  const { store, clock } = setup();
+  const m = store.createMatter({ name: 'Alpha' });
+  store.toggle(m.id);
+  store.addNote('analysis of MAC clause');
+  clock.advance(42 * MIN);
+  store.nextTask('email to deal team');
+  clock.advance(9 * MIN);
+  store.nextTask();
+  store.addNote('call w/ GC', m.id, 'dictated');
+  clock.advance(13 * MIN);
+  store.stop();
+
+  const blocks = store.taskBlocks(DATE, m.id);
+  assert.deepEqual(
+    blocks.map((b) => [b.task, b.ms / MIN, b.notes.map((n) => n.text)]),
+    [
+      [0, 42, ['analysis of MAC clause']],
+      [1, 9, ['email to deal team']],
+      [2, 13, ['call w/ GC']],
+    ],
+  );
+  assert.equal(store.day(DATE).entries[0].computed_hours, 1.1); // 64 min total
+  assert.throws(() => store.nextTask(), /No timer running/);
+});
+
+test('switching away and back continues the same task', () => {
+  const { store, clock } = setup();
+  const a = store.createMatter({ name: 'A' });
+  const b = store.createMatter({ name: 'B' });
+  store.toggle(a.id);
+  clock.advance(10 * MIN);
+  store.nextTask();
+  clock.advance(5 * MIN);
+  store.toggle(b.id); // interruption on another matter
+  clock.advance(20 * MIN);
+  store.toggle(a.id); // back to A: still task 1
+  clock.advance(5 * MIN);
+  store.stop();
+  assert.deepEqual(store.taskBlocks(DATE, a.id).map((x) => [x.task, x.ms / MIN]), [[0, 10], [1, 10]]);
+  assert.deepEqual(store.taskBlocks(DATE, b.id).map((x) => x.task), [0]);
+});
+
+test('state reports the running task count', () => {
+  const { store, clock } = setup();
+  const m = store.createMatter({ name: 'A' });
+  store.toggle(m.id);
+  clock.advance(MIN);
+  store.nextTask();
+  assert.equal(store.state().running.tasks_today, 2);
+});
+
+test('server: marked tasks give an exact split; model only writes narratives', async () => {
+  let config = deepMerge(DEFAULTS, { timekeeper: { id: '10001' } });
+  const { store, clock } = setup();
+  const calls = [];
+  const fetchImpl = async (_u, opts) => {
+    const body = JSON.parse(opts.body);
+    calls.push(body);
+    const notes = body.messages.at(-1).content.match(/Notes: (.*)/)?.[1] ?? '';
+    return { ok: true, json: async () => ({ message: { content: `Narrative for ${notes}.` } }) };
+  };
+  const server = createServer({ store, getConfig: () => config, setConfig: (c) => (config = c), fetchImpl, exportDir: fs.mkdtempSync(path.join(os.tmpdir(), 'dt-')) });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (p, body = {}) => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    const m = store.createMatter({ name: 'Strict', client_no: '1', matter_no: '1', block_billing: 'prohibited' });
+    store.toggle(m.id);
+    store.addNote('analysis');
+    clock.advance(42 * MIN);
+    assert.equal((await post('/api/timer/next-task', { label: 'email' })).status, 200);
+    clock.advance(9 * MIN);
+    await post('/api/timer/next-task', { label: 'call' });
+    clock.advance(13 * MIN);
+    store.stop();
+
+    const p = await (await post(`/api/entries/${DATE}/${m.id}/split/propose`)).json();
+    assert.equal(p.mode, 'tasks');
+    assert.equal(p.total_hours, 1.1);
+    assert.deepEqual(p.entries.map((e) => [e.notes, e.hours, e.narrative]), [
+      ['analysis', 0.7, 'Narrative for analysis.'],
+      ['email', 0.2, 'Narrative for email.'],
+      ['call', 0.2, 'Narrative for call.'],
+    ]);
+    assert.equal(calls.length, 3); // one narrative per task, no split-guessing call
+  } finally {
+    server.close();
+    store.close();
+  }
+});
+
+test('normalizeSplit gives short tasks their fair tenth (largest remainder)', () => {
+  // 42 / 9 / 13 minutes of a 1.1h day
+  const out = normalizeSplit([{ hours: 42 / 60 }, { hours: 9 / 60 }, { hours: 13 / 60 }], 1.1);
+  assert.deepEqual(out.map((e) => e.hours), [0.7, 0.2, 0.2]);
+});
+
+test('applying a split whose total exceeds the timer pins the main entry', () => {
+  const { store, clock } = setup();
+  const m = store.createMatter({ name: 'Quick' });
+  timeOn(store, clock, m.id, 5); // 0.1h on the timer
+  const rows = store.applySplit(DATE, m.id, [
+    { narrative: 'Reviewed.', hours: 0.1 },
+    { narrative: 'Emailed.', hours: 0.1 },
+    { narrative: 'Called.', hours: 0.1 },
+  ]);
+  assert.deepEqual(rows.map((e) => e.hours), [0.1, 0.1, 0.1]);
+  assert.equal(rows[0].over_allocated, false);
+});

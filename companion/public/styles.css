@@ -244,3 +244,6 @@ label.check input { width: auto; }
   .split-row, .split-row:has(select) { grid-template-columns: 1fr; }
   .client-head { flex-wrap: wrap; }
 }
+
+.split-text { display: grid; gap: 4px; }
+.split-text small { color: var(--muted); }

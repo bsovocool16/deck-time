@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aiStatus, draftNarrative, proposeSplit, suggestCodes } from './ai.js';
+import { aiStatus, draftNarrative, normalizeSplit, proposeSplit, suggestCodes } from './ai.js';
 import { codesFor } from './codes.js';
 import { Dictation } from './dictation.js';
 import { DB_PATH, EXPORT_DIR, loadConfig, saveConfig, deepMerge } from './config.js';
@@ -43,6 +43,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
     ['PATCH', /^\/api\/matters\/(\d+)$/, (b, _, [id]) => store.updateMatter(+id, b)],
     ['POST', /^\/api\/timer\/toggle$/, (b) => store.toggle(+b.matter_id)],
     ['POST', /^\/api\/timer\/stop$/, () => store.stop()],
+    ['POST', /^\/api\/timer\/next-task$/, (b) => store.nextTask(b.label ? String(b.label) : '')],
     ['POST', /^\/api\/timer\/note$/, (b) => store.addNote(String(b.text ?? ''), b.matter_id ? +b.matter_id : undefined)],
     ['GET', /^\/api\/day$/, (_, q) => store.day(dateParam(q))],
     ['GET', /^\/api\/segments$/, (_, q) => store.segmentsForDay(dateParam(q))],
@@ -97,18 +98,42 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
       const main = rows.find((e) => e.part === 0);
       const totalHours = main?.computed_hours || rows.reduce((s, e) => s + e.hours, 0);
       if (!(totalHours > 0)) throw httpError(400, 'No time recorded for this matter today');
+      const config = getConfig();
+      const rules = store.rulesFor(matter);
+      const codes = codesFor(matter, config);
+      const blocks = store.taskBlocks(date, matterId);
+
+      if (blocks.length > 1) {
+        // Tasks were marked with "Next task": durations are exact, the model only writes narratives/codes.
+        // Every marked task is its own entry, so each gets at least the minimum increment.
+        const inc = config.rounding.increment;
+        const total = Math.max(totalHours, Math.round(blocks.length * Math.max(inc, config.rounding.minimum) * 100) / 100);
+        const sized = normalizeSplit(blocks.map((b) => ({ ...b, hours: b.ms / 3_600_000 })), total, inc);
+        const entries = [];
+        for (const b of sized) {
+          const notes = b.notes.map((n) => n.text).join('; ');
+          const item = { notes, narrative: '', hours: b.hours, task: b.task, range: [b.start, b.end] };
+          if (notes) {
+            item.narrative = await draftNarrative({ config, matter, notes, hours: b.hours, recent: store.recentNarratives(matterId), rules, fetchImpl });
+            if (codes) Object.assign(item, await suggestCodes({ config, narrative: item.narrative, codes, fetchImpl }).catch(() => ({})));
+          }
+          entries.push(item);
+        }
+        return { mode: 'tasks', total_hours: total, entries };
+      }
+
       const proposal = await proposeSplit({
-        config: getConfig(),
+        config,
         matter,
-        rules: store.rulesFor(matter),
+        rules,
         notes: rows.map((e) => e.notes).filter(Boolean).join('; '),
         timeline: store.timeline(date, matterId),
         totalHours,
-        codes: codesFor(matter, getConfig()),
-        increment: getConfig().rounding.increment,
+        codes,
+        increment: config.rounding.increment,
         fetchImpl,
       });
-      return { total_hours: totalHours, entries: proposal };
+      return { mode: 'ai', total_hours: totalHours, entries: proposal };
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
     ['GET', /^\/api\/clients$/, () => store.listClients()],

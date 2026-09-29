@@ -82,12 +82,14 @@ In the Stream Deck app, drag from the **deck-time** category:
 |---|---|
 | Matter Timer | Pick a matter in the key's settings. Tap = start/stop. |
 | Dictate Note | Hold to talk / tap to toggle. Adds to the running matter's notes. |
+| Next Task | Marks a task boundary on the running timer (shows task # and time in task). |
 | Stop Timer | Stops whatever is running. Shows today's total. |
 | Review Day | Opens the companion in your browser. |
 | Timer Info Bar | Drag onto the Neo's info bar. Running matter + clock. |
 
-Suggested Neo layout: 5 matter keys + Dictate + Stop + Review, with the info
-bar on top. Use the Neo's page buttons for more matters.
+Suggested Neo layout: 5 matter keys + Dictate + Next Task + Stop, with the
+info bar showing the running timer. Put Review and more matters on page 2
+(the Neo's touch page buttons), or open Review from the browser.
 
 ## Client billing rules & block billing
 
@@ -110,8 +112,14 @@ On days when you've done several tasks for a no-block client:
 - Export flags narratives that look block-billed ("…; …", "Reviewed X and
   drafted Y") on no-block matters and asks before exporting anyway.
 
-Tip: dictate a quick note when you switch tasks ("starting email to team").
-It's timestamped, which makes the split much more accurate.
+**Next Task** makes splits exact. Press it (deck key, or ⏭ in the web app)
+when you move from, say, the analysis to the email about it. The timer keeps
+running on the same matter, but a new task starts. Tap Dictate right after to
+label it. When you split, each marked task becomes its own entry with its real
+duration (tenths allocated by largest remainder so they add up, each at least
+the minimum), and the model only writes the narratives and codes. Without
+marks, the model estimates the split from your timestamped notes. Switching to
+another matter and back continues the same task.
 
 ## Task / activity codes
 

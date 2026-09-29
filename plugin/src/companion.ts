@@ -17,7 +17,7 @@ export type State = {
 	now: number;
 	today: string;
 	total_hours: number;
-	running: { id: number; matter_id: number; start_ms: number; matter: Matter } | null;
+	running: { id: number; matter_id: number; start_ms: number; task: number; tasks_today: number; matter: Matter } | null;
 	matters: Matter[];
 	dictation: { status: "idle" | "recording" | "transcribing"; error: string | null; started_at: number | null } | null;
 };

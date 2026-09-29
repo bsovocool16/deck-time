@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS segments (
   id        INTEGER PRIMARY KEY,
   matter_id INTEGER NOT NULL REFERENCES matters(id),
   start_ms  INTEGER NOT NULL,
-  end_ms    INTEGER
+  end_ms    INTEGER,
+  task      INTEGER NOT NULL DEFAULT 0   -- task number within the matter's day; "Next task" increments it
 );
 CREATE INDEX IF NOT EXISTS segments_time ON segments(start_ms, end_ms);
 
@@ -74,6 +75,7 @@ const BLOCK_BILLING = new Set(['', 'allowed', 'prohibited']);
 
 // Columns added after the first release: [table, column, definition]
 const MIGRATIONS = [
+  ['segments', 'task', 'INTEGER NOT NULL DEFAULT 0'],
   ['matters', 'code_set', "TEXT NOT NULL DEFAULT ''"],
   ['matters', 'block_billing', "TEXT NOT NULL DEFAULT ''"],
   ['matters', 'guidelines', "TEXT NOT NULL DEFAULT ''"],
@@ -222,7 +224,8 @@ export class Store extends EventEmitter {
       if (current) this.db.prepare('UPDATE segments SET end_ms = ? WHERE id = ?').run(now, current.id);
       if (!current || current.matter_id !== matterId) {
         if (matter.archived) throw httpError(400, 'Matter is archived');
-        this.db.prepare('INSERT INTO segments (matter_id, start_ms) VALUES (?, ?)').run(matterId, now);
+        // Returning to a matter continues its current task; only "Next task" starts a new one.
+        this.db.prepare('INSERT INTO segments (matter_id, start_ms, task) VALUES (?, ?, ?)').run(matterId, now, this.#currentTask(matterId, now));
       }
       this.db.exec('COMMIT');
     } catch (e) {
@@ -231,6 +234,71 @@ export class Store extends EventEmitter {
     }
     this.emitChange();
     return this.running();
+  }
+
+  #currentTask(matterId, at) {
+    const [start] = dayBounds(localDate(at));
+    const row = this.db.prepare('SELECT MAX(task) AS t FROM segments WHERE matter_id = ? AND start_ms >= ?').get(matterId, start);
+    return row?.t ?? 0;
+  }
+
+  /** Mark a task boundary on the running timer: close the current task and start the next on the same matter. */
+  nextTask(label) {
+    const current = this.running();
+    if (!current) throw httpError(400, 'No timer running');
+    const now = this.now();
+    const task = this.#currentTask(current.matter_id, now) + 1;
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('UPDATE segments SET end_ms = ? WHERE id = ?').run(now, current.id);
+      this.db.prepare('INSERT INTO segments (matter_id, start_ms, task) VALUES (?, ?, ?)').run(current.matter_id, now, task);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    if (label?.trim()) this.addNote(label, current.matter_id);
+    else this.emitChange();
+    return this.running();
+  }
+
+  /**
+   * A matter's day grouped by task (as marked with "Next task"): time in each
+   * task and the notes taken during it.
+   */
+  taskBlocks(date, matterId) {
+    const [dayStart, dayEnd] = dayBounds(date);
+    const now = this.now();
+    const segs = this.segmentsForDay(date).filter((s) => s.matter_id === matterId);
+    const blocks = new Map();
+    for (const s of segs) {
+      const start = Math.max(s.start_ms, dayStart);
+      const end = Math.min(s.end_ms ?? now, dayEnd);
+      const b = blocks.get(s.task) ?? { task: s.task, ms: 0, start, end, segments: [], notes: [] };
+      b.ms += Math.max(end - start, 0);
+      b.start = Math.min(b.start, start);
+      b.end = Math.max(b.end, end);
+      b.segments.push(s);
+      blocks.set(s.task, b);
+    }
+    const list = [...blocks.values()].sort((a, b) => a.task - b.task);
+    const { notes } = this.timeline(date, matterId);
+    for (const n of notes) {
+      // A note belongs to the task whose segment contains it; a note at a task
+      // boundary belongs to the task that just started. Otherwise, the latest
+      // task started before it.
+      let owner = null;
+      let ownerStart = -Infinity;
+      for (const b of list) {
+        for (const s of b.segments) {
+          const inside = n.ts >= s.start_ms && (s.end_ms == null ? n.ts <= now : n.ts < s.end_ms);
+          if (inside && s.start_ms >= ownerStart) [owner, ownerStart] = [b, s.start_ms];
+        }
+      }
+      owner ??= [...list].reverse().find((b) => b.start <= n.ts) ?? list[0];
+      owner?.notes.push(n);
+    }
+    return list.map(({ segments, ...b }) => b);
   }
 
   stop() {
@@ -287,9 +355,9 @@ export class Store extends EventEmitter {
   updateSegment(id, input) {
     const seg = this.db.prepare('SELECT * FROM segments WHERE id = ?').get(id);
     if (!seg) throw httpError(404, 'Segment not found');
-    const next = { ...plain(seg), ...pick(input, ['matter_id', 'start_ms', 'end_ms']) };
+    const next = { ...plain(seg), ...pick(input, ['matter_id', 'start_ms', 'end_ms', 'task']) };
     if (next.end_ms != null && !(next.end_ms > next.start_ms)) throw httpError(400, 'End must be after start');
-    this.db.prepare('UPDATE segments SET matter_id = ?, start_ms = ?, end_ms = ? WHERE id = ?').run(next.matter_id, next.start_ms, next.end_ms, id);
+    this.db.prepare('UPDATE segments SET matter_id = ?, start_ms = ?, end_ms = ?, task = ? WHERE id = ?').run(next.matter_id, next.start_ms, next.end_ms, next.task, id);
     this.emitChange();
   }
 
@@ -367,11 +435,21 @@ export class Store extends EventEmitter {
     if (!Array.isArray(items) || !items.length) throw httpError(400, 'Nothing to apply');
     if (items.slice(1).some((i) => !(Number(i.hours) > 0))) throw httpError(400, 'Every split entry needs hours');
     const main = this.getEntry(date, matterId, 0);
+    // Normally the main entry keeps the timer remainder. If the split's total
+    // differs from the timer (e.g. per-task minimums), pin its hours instead.
+    const timer = this.day(date).entries.find((e) => e.matter_id === matterId && e.part === 0)?.computed_hours ?? 0;
+    const splitTotal = round2(items.reduce((sum, i) => sum + (Number(i.hours) || 0), 0));
+    const pinMain = Number(items[0].hours) > 0 && Math.abs(splitTotal - timer) > 0.001;
     this.db.exec('BEGIN');
     try {
       this.db.prepare('DELETE FROM entries WHERE date = ? AND matter_id = ? AND part > 0').run(date, matterId);
       const [first, ...rest] = items;
-      this.#write(date, matterId, 0, { ...main, ...pick(first, ['notes', 'narrative', 'task_code', 'activity_code']), hours_override: null, status: 'draft' });
+      this.#write(date, matterId, 0, {
+        ...main,
+        ...pick(first, ['notes', 'narrative', 'task_code', 'activity_code']),
+        hours_override: pinMain ? round2(Number(first.hours)) : null,
+        status: 'draft',
+      });
       rest.forEach((item, i) => {
         this.#write(date, matterId, i + 1, { ...pick(item, ['notes', 'narrative', 'task_code', 'activity_code']), hours_override: round2(Number(item.hours)), status: 'draft' });
       });
@@ -457,7 +535,9 @@ export class Store extends EventEmitter {
       now: this.now(),
       today,
       total_hours,
-      running: running ? { ...running, matter: this.getMatter(running.matter_id) } : null,
+      running: running
+        ? { ...running, matter: this.getMatter(running.matter_id), tasks_today: this.taskBlocks(today, running.matter_id).length }
+        : null,
       matters: this.listMatters().map((m) => ({ ...m, today_ms: todayMs[m.id] ?? 0 })),
     };
   }

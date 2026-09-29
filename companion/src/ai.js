@@ -198,20 +198,32 @@ export async function proposeSplit({ config, matter, rules, notes, timeline, tot
   );
 }
 
-/** Snap hours to the increment (min one increment each) and make them sum to the total. */
+/**
+ * Allocate a total across entries in whole increments. Proposed hours are
+ * first scaled so they sum exactly to the total, then each entry gets its whole
+ * increments (at least one) and leftover increments go to the largest
+ * fractions (largest-remainder method). The result always sums to totalHours.
+ */
 export function normalizeSplit(entries, totalHours, increment = 0.1) {
-  const steps = (h) => Math.max(1, Math.round(Number(h) / increment) || 1);
   const target = Math.round(totalHours / increment);
-  const out = entries.slice(0, Math.max(1, target)).map((e, i) => ({ ...e, steps: steps(e.hours), i }));
+  const items = entries.slice(0, Math.max(1, target));
+  const raw = items.map((e) => Math.max(Number(e.hours) || 0, 0) / increment);
+  const sum = raw.reduce((a, b) => a + b, 0);
+  const exact = sum > 0 ? raw.map((r) => (r * target) / sum) : raw.map(() => target / items.length);
+  const out = items.map((e, i) => {
+    const whole = Math.floor(exact[i] + 1e-9);
+    return { ...e, i, steps: Math.max(1, whole), frac: exact[i] - whole };
+  });
   let diff = target - out.reduce((s, e) => s + e.steps, 0);
-  // Add to / take from the largest entries first, never below one increment.
-  // Ties: add to earlier entries, take from later ones.
-  while (diff !== 0) {
-    const sorted = [...out].sort((a, b) => b.steps - a.steps || (diff > 0 ? a.i - b.i : b.i - a.i));
-    const pickOne = diff > 0 ? sorted[0] : sorted.find((e) => e.steps > 1);
-    if (!pickOne) break;
-    pickOne.steps += diff > 0 ? 1 : -1;
-    diff += diff > 0 ? -1 : 1;
+  // Spare increments: largest fraction first (ties: larger, then earlier entry).
+  const byFrac = [...out].sort((a, b) => b.frac - a.frac || b.steps - a.steps || a.i - b.i);
+  for (let k = 0; diff > 0; k++, diff--) byFrac[k % byFrac.length].steps += 1;
+  // Over by the one-increment minimums: take from the largest entries (ties: later first).
+  while (diff < 0) {
+    const e = [...out].filter((x) => x.steps > 1).sort((a, b) => b.steps - a.steps || b.i - a.i)[0];
+    if (!e) break;
+    e.steps -= 1;
+    diff += 1;
   }
-  return out.map(({ steps: n, i: _i, ...e }) => ({ ...e, hours: Math.round(n * increment * 100) / 100 }));
+  return out.map(({ steps: n, i: _i, frac: _f, ...e }) => ({ ...e, hours: Math.round(n * increment * 100) / 100 }));
 }

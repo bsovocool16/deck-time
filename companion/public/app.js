@@ -87,10 +87,11 @@ function connect() {
 function renderRunning() {
   const r = state.running;
   $('#running').classList.toggle('idle', !r);
-  $('#running-label').textContent = r ? r.matter.name : 'No timer running';
+  $('#running-label').textContent = r ? `${r.matter.name}${r.tasks_today > 1 ? ` · task ${r.tasks_today}` : ''}` : 'No timer running';
   $('#running-elapsed').textContent = r ? clock(state.now - r.start_ms) : '';
   $('#note-input').disabled = !r;
   $('#stop-btn').disabled = !r;
+  $('#next-task-btn').disabled = !r;
   const d = state.dictation;
   const btn = $('#dictate-btn');
   btn.disabled = !d || (!r && d.status === 'idle') || d.status === 'transcribing';
@@ -198,12 +199,12 @@ function proposalPanel(matterId, matter) {
   const off = Math.abs(sum - p.total_hours) > 0.001;
   return `<div class="split-panel" data-proposal="${matterId}">
     <div class="split-head"><strong>Proposed split</strong> <span class="${off ? 'bad' : ''}">${sum.toFixed(1)} of ${p.total_hours.toFixed(1)}h</span>
-      <small>Review and edit before applying. The first row becomes the main entry.</small></div>
+      <small>${p.mode === 'tasks' ? 'From your task breaks, so durations are exact.' : 'Estimated by the local AI from your notes.'} Review and edit before applying. The first row becomes the main entry.</small></div>
     ${p.entries
       .map(
         (e, i) => `<div class="split-row" data-i="${i}">
         <input type="number" step="0.1" min="0.1" name="hours" value="${Number(e.hours).toFixed(1)}">
-        <textarea name="narrative" rows="2">${esc(e.narrative)}</textarea>
+        <div class="split-text">${e.range ? `<small>${hhmm(e.range[0])}–${hhmm(e.range[1])}${e.notes ? ` · ${esc(e.notes)}` : ' · no notes: write this one'}</small>` : ''}<textarea name="narrative" rows="2" placeholder="Narrative">${esc(e.narrative)}</textarea></div>
         ${set ? `<select name="task_code">${codeOptions(set.codes, e.task_code, '')}</select><select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, '')}</select>` : ''}
         <button class="icon danger" data-action="drop-row" title="Remove row">✕</button>
       </div>`,
@@ -235,6 +236,7 @@ function renderSegments(segs) {
         const end = s.end_ms ?? state.now;
         return `<tr data-seg="${s.id}" data-start="${s.start_ms}">
         <td>${esc(byId[s.matter_id]?.name ?? `#${s.matter_id}`)}</td>
+        <td>${s.task + 1}</td>
         <td><input type="time" name="start" value="${hhmm(s.start_ms)}"></td>
         <td>${s.end_ms ? `<input type="time" name="end" value="${hhmm(s.end_ms)}">` : '<span class="live-badge">running</span>'}</td>
         <td>${Math.round((end - s.start_ms) / 60000)}</td>
@@ -411,7 +413,7 @@ document.addEventListener('click', guard(async (ev) => {
     return;
   }
   const panel = t.closest('[data-proposal]');
-  if (panel) {
+  if (panel && t.dataset.action) {
     const matterId = panel.dataset.proposal;
     readProposal(panel);
     if (t.dataset.action === 'drop-row') proposals[matterId].entries.splice(+t.closest('.split-row').dataset.i, 1);
@@ -496,6 +498,13 @@ $('#note-form').addEventListener('submit', guard(async (ev) => {
 }));
 
 $('#dictate-btn').addEventListener('click', guard(() => api('/api/dictation/toggle', { method: 'POST', body: {} })));
+$('#next-task-btn').addEventListener('click', guard(async () => {
+  const input = $('#note-input');
+  await api('/api/timer/next-task', { method: 'POST', body: { label: input.value } });
+  input.value = '';
+  toast('New task started');
+  refreshDay();
+}));
 $('#stop-btn').addEventListener('click', guard(() => api('/api/timer/stop', { method: 'POST', body: {} })));
 
 function setDay(d) {
