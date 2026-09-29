@@ -215,3 +215,32 @@ td input[type=time] { width: auto; }
 .entry .codes { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px 14px; align-items: end; }
 .entry .codes.missing select { border-color: var(--warn-text); }
 @media (max-width: 720px) { .entry .codes { grid-template-columns: 1fr; } }
+
+/* Block billing / split entries */
+.entry.part { margin-left: 28px; border-left-style: dashed; }
+.part-label { color: var(--muted); font-size: 12px; font-weight: 600; }
+.rule-badge, .warn-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+.rule-badge { background: var(--warn-bg); color: var(--warn-text); cursor: help; }
+.rule-badge.soft { background: var(--bg); color: var(--muted); border: 1px solid var(--border); }
+.warn-badge { background: var(--danger); color: #fff; }
+.alloc { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.alloc.bad, .split-head .bad { color: var(--danger); font-weight: 600; }
+button.icon { padding: 2px 8px; }
+.split-panel { margin-left: 28px; background: var(--surface); border: 1px dashed var(--accent); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 8px; }
+.split-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.split-head small { color: var(--muted); }
+.split-row { display: grid; grid-template-columns: 76px 1fr auto; gap: 8px; align-items: start; }
+.split-row:has(select) { grid-template-columns: 76px 1fr 150px 150px auto; }
+.split-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.client-card { display: grid; gap: 8px; margin-bottom: 10px; }
+.client-head { display: flex; gap: 12px; align-items: center; }
+.client-head input[name=name] { flex: 1; }
+.client-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.client-foot small { color: var(--muted); }
+label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap; font-size: 13px; }
+label.check input { width: auto; }
+@media (max-width: 720px) {
+  .entry.part, .split-panel { margin-left: 12px; }
+  .split-row, .split-row:has(select) { grid-template-columns: 1fr; }
+  .client-head { flex-wrap: wrap; }
+}

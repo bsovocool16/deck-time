@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aiStatus, draftNarrative, suggestCodes } from './ai.js';
+import { aiStatus, draftNarrative, proposeSplit, suggestCodes } from './ai.js';
 import { codesFor } from './codes.js';
 import { Dictation } from './dictation.js';
 import { DB_PATH, EXPORT_DIR, loadConfig, saveConfig, deepMerge } from './config.js';
@@ -49,50 +49,72 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
     ['POST', /^\/api\/segments$/, (b) => store.addSegment(b)],
     ['PATCH', /^\/api\/segments\/(\d+)$/, (b, _, [id]) => store.updateSegment(+id, b)],
     ['DELETE', /^\/api\/segments\/(\d+)$/, (_, __, [id]) => store.deleteSegment(+id)],
-    ['PATCH', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)$/, (b, _, [date, id]) => store.updateEntry(date, +id, b)],
-    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/narrate$/, async (_, __, [date, id]) => {
+    // Entries: /api/entries/:date/:matter[/:part] — part 0 (default) is the main entry.
+    ['PATCH', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?$/, (b, _, [date, id, part]) => store.updateEntry(date, +id, b, +(part ?? 0))],
+    ['DELETE', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/(\d+)$/, (_, __, [date, id, part]) => store.deletePart(date, +id, +part)],
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/parts$/, (b, _, [date, id]) => store.addPart(date, +id, b)],
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/narrate$/, async (_, __, [date, id, part]) => {
       const matterId = +id;
-      const entry = store.day(date).entries.find((e) => e.matter_id === matterId) ?? store.getEntry(date, matterId);
+      const p = +(part ?? 0);
+      const matter = store.getMatter(matterId);
+      if (!matter) throw httpError(404, 'Matter not found');
+      const entry = store.day(date).entries.find((e) => e.matter_id === matterId && e.part === p) ?? store.getEntry(date, matterId, p);
       const narrative = await draftNarrative({
         config: getConfig(),
-        matter: store.getMatter(matterId),
+        matter,
         notes: entry.notes,
         hours: entry.hours,
         recent: store.recentNarratives(matterId),
+        rules: store.rulesFor(matter),
         fetchImpl,
       });
-      const saved = store.updateEntry(date, matterId, { narrative });
+      const saved = store.updateEntry(date, matterId, { narrative }, p);
       // Fill codes too, unless the user already chose them for this entry.
-      const codes = codesFor(store.getMatter(matterId), getConfig());
+      const codes = codesFor(matter, getConfig());
       if (!codes || (saved.task_code && saved.activity_code)) return saved;
       try {
-        return store.updateEntry(date, matterId, await suggestCodes({ config: getConfig(), narrative, codes, fetchImpl }));
+        return store.updateEntry(date, matterId, await suggestCodes({ config: getConfig(), narrative, codes, fetchImpl }), p);
       } catch (e) {
         console.warn(`code suggestion failed: ${e.message}`);
         return saved;
       }
     }],
-    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/codes$/, async (_, __, [date, id]) => {
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/codes$/, async (_, __, [date, id, part]) => {
       const matterId = +id;
+      const p = +(part ?? 0);
       const codes = codesFor(store.getMatter(matterId), getConfig());
       if (!codes) throw httpError(400, 'This matter does not use task/activity codes');
-      const { narrative, notes } = store.getEntry(date, matterId);
+      const { narrative, notes } = store.getEntry(date, matterId, p);
       const picked = await suggestCodes({ config: getConfig(), narrative: narrative || notes, codes, fetchImpl });
-      return store.updateEntry(date, matterId, picked);
+      return store.updateEntry(date, matterId, picked, p);
     }],
+    // Block billing: propose a split with the local model (not saved), then apply the reviewed version.
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/propose$/, async (_, __, [date, id]) => {
+      const matterId = +id;
+      const matter = store.getMatter(matterId);
+      if (!matter) throw httpError(404, 'Matter not found');
+      const rows = store.day(date).entries.filter((e) => e.matter_id === matterId);
+      const main = rows.find((e) => e.part === 0);
+      const totalHours = main?.computed_hours || rows.reduce((s, e) => s + e.hours, 0);
+      if (!(totalHours > 0)) throw httpError(400, 'No time recorded for this matter today');
+      const proposal = await proposeSplit({
+        config: getConfig(),
+        matter,
+        rules: store.rulesFor(matter),
+        notes: rows.map((e) => e.notes).filter(Boolean).join('; '),
+        timeline: store.timeline(date, matterId),
+        totalHours,
+        codes: codesFor(matter, getConfig()),
+        increment: getConfig().rounding.increment,
+        fetchImpl,
+      });
+      return { total_hours: totalHours, entries: proposal };
+    }],
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
+    ['GET', /^\/api\/clients$/, () => store.listClients()],
+    ['PUT', /^\/api\/clients\/([^/]+)$/, (b, _, [no]) => store.updateClient(decodeURIComponent(no), b)],
     ['POST', /^\/api\/export$/, (b) => exportDay(b)],
     ['GET', /^\/api\/ai\/status$/, () => aiStatus(getConfig(), fetchImpl)],
-    ['POST', /^\/api\/tim\/learn$/, (b) => {
-      const learned = learnFromTim(String(b.text ?? ''));
-      const cfg = getConfig();
-      // Replace (not merge) the defaults so stale keys don't linger.
-      setConfig({
-        ...cfg,
-        timekeeper: { ...cfg.timekeeper, id: cfg.timekeeper.id || learned.timekeeperId },
-        tim: { ...cfg.tim, defaults: learned.defaults, ssPrefix: learned.ssPrefix },
-      });
-      return { entries: learned.entries, timekeeperId: learned.timekeeperId, unknownVarying: learned.unknownVarying };
-    }],
     ['POST', /^\/api\/tim\/learn$/, (b) => {
       const learned = learnFromTim(String(b.text ?? ''));
       const cfg = getConfig();
@@ -112,13 +134,15 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
     }],
   ];
 
-  function exportDay({ date, format = 'tim', includeExported = false, markExported = true }) {
+  function exportDay({ date, format = 'tim', includeExported = false, markExported = true, force = false }) {
     if (!isDate(date)) throw httpError(400, 'date must be YYYY-MM-DD');
     const config = getConfig();
     const entries = exportable(store.day(date).entries, { includeExported });
     if (!entries.length) throw httpError(400, 'Nothing to export for that day');
     const problems = format === 'csv' ? entries.filter((e) => !e.narrative.trim()).map((e) => `${e.matter.name}: missing narrative`) : validateForTim(entries, config);
     if (problems.length) throw httpError(400, `Can't export yet: ${problems.join('; ')}`);
+    const warnings = entries.filter((e) => e.block_warning).map((e) => `${e.matter.name}: looks block-billed, but this client prohibits it`);
+    if (warnings.length && !force) throw Object.assign(httpError(409, warnings.join('; ')), { warnings });
     const body = format === 'csv' ? toCsv(entries) : toTim(entries, config);
     const filename = `deck-time-${date}.${format === 'csv' ? 'csv' : 'tim'}`;
     fs.mkdirSync(exportDir, { recursive: true });
@@ -153,7 +177,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
     } catch (e) {
       const status = e.status ?? 500;
       if (status >= 500) console.error(e);
-      send(res, status, { error: e.message });
+      send(res, status, { error: e.message, ...(e.warnings ? { warnings: e.warnings } : {}) });
     }
   });
 
@@ -215,7 +239,7 @@ function serveStatic(pathname, res) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let config = loadConfig();
   const store = new Store(DB_PATH, () => config);
-  const dictation = new Dictation({ getConfig: () => config, onText: (text, ctx) => store.addNote(text, ctx.matterId) });
+  const dictation = new Dictation({ getConfig: () => config, onText: (text, ctx) => store.addNote(text, ctx.matterId, 'dictated') });
   const server = createServer({
     store,
     dictation,

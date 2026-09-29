@@ -76,13 +76,25 @@
         <label>Task/activity codes <select name="code_set"></select></label>
         <label>Default task code <input name="task_code" placeholder="e.g. C300 (optional)"></label>
         <label>Default activity code <input name="activity_code" placeholder="e.g. A104 (optional)"></label>
+        <label>Block billing
+          <select name="block_billing">
+            <option value="">Same as client</option>
+            <option value="prohibited">Prohibited for this matter</option>
+            <option value="allowed">Allowed for this matter</option>
+          </select>
+        </label>
+        <label class="wide">Matter billing guidelines <textarea name="guidelines" rows="2" placeholder="Added to the client's guidelines, e.g. &quot;Use L-series codes; no entries under 0.2&quot;"></textarea></label>
         <label>Color <input name="color" type="color" value="#3b82f6"></label>
         <div class="form-actions">
           <button type="submit" class="primary">Save matter</button>
           <button type="reset">Clear</button>
         </div>
       </form>
-      <table id="matters-table"><thead><tr><th></th><th>Name</th><th>Label</th><th>Client-Matter</th><th>Codes</th><th></th></tr></thead><tbody></tbody></table>
+      <h2>Client billing rules <small>remembered per client number and applied to all of its matters</small></h2>
+      <div id="clients"></div>
+
+      <h2>All matters</h2>
+      <table id="matters-table"><thead><tr><th></th><th>Name</th><th>Label</th><th>Client-Matter</th><th>Codes</th><th>Billing</th><th></th></tr></thead><tbody></tbody></table>
     </section>
 
     <!-- SETTINGS -->

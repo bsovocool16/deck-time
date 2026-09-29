@@ -1,6 +1,6 @@
 // Narrative drafting via a local Ollama model. Nothing leaves this machine.
 
-export function buildPrompt({ matter, notes, hours, styleGuide, examples }) {
+export function buildPrompt({ matter, notes, hours, styleGuide, examples, rules }) {
   const system = [
     'You write billing narratives for a lawyer\'s time entries.',
     'Rewrite the lawyer\'s shorthand notes as one polished narrative.',
@@ -8,8 +8,14 @@ export function buildPrompt({ matter, notes, hours, styleGuide, examples }) {
     styleGuide,
     'Use only facts present in the notes. If the notes are vague, stay vague rather than guessing.',
     'Expand common abbreviations (e.g., "w/" = with, "re" = regarding, "opp" = opposing, "ltr" = letter, "tc" = telephone conference, "conf" = conference, "rev" = review, "agmt" = agreement).',
+    rules?.guidelines ? `This client's billing guidelines (follow them):\n${rules.guidelines}` : null,
+    rules?.no_block_billing
+      ? 'This client prohibits block billing: describe a single task. Do not join separate tasks with semicolons or "and".'
+      : null,
     'Reply with the narrative text only: no quotes, labels, or explanation.',
-  ].join('\n');
+  ]
+    .filter(Boolean)
+    .join('\n');
 
   const messages = [{ role: 'system', content: system }];
   for (const ex of examples) {
@@ -35,12 +41,12 @@ export function cleanNarrative(text) {
     .trim();
 }
 
-export async function draftNarrative({ config, matter, notes, hours, recent = [], fetchImpl = fetch }) {
+export async function draftNarrative({ config, matter, notes, hours, recent = [], rules, fetchImpl = fetch }) {
   if (!notes?.trim()) throw Object.assign(new Error('Add a few words of notes first'), { status: 400 });
   const { styleGuide, examples } = config.ai;
   // Past narratives for this matter keep terminology consistent.
   const allExamples = [...examples, ...recent.filter((r) => r.notes)].slice(-6);
-  const messages = buildPrompt({ matter, notes, hours, styleGuide, examples: allExamples });
+  const messages = buildPrompt({ matter, notes, hours, styleGuide, examples: allExamples, rules });
 
   return cleanNarrative(await ollamaChat({ config, messages, fetchImpl }));
 }
@@ -78,6 +84,13 @@ export async function aiStatus(config, fetchImpl = fetch) {
   }
 }
 
+const CODE_GUIDANCE = [
+  'The task code describes the substance of the work; the activity code describes how it was done.',
+  '"Third party" means anyone other than the client and the firm: the client is never a third party.',
+  'Any lawyer outside the firm (opposing counsel, co-counsel, counsel to another party) is "other outside counsel".',
+  'Reviewing or analyzing documents to advise the client is analysis and advice, not fact gathering; so is reporting that analysis to the client or deal team.',
+].join('\n');
+
 /**
  * Pick a UTBMS task + activity code for a narrative. Ollama's structured output
  * (JSON schema with enums) guarantees the answer is one of the allowed codes.
@@ -92,10 +105,7 @@ export async function suggestCodes({ config, narrative, codes, fetchImpl = fetch
         'You assign UTBMS billing codes to a lawyer\'s time entry.',
         'Choose the single best task code and the single best activity code for the work described.',
         'If the entry mixes tasks, choose the code for the predominant work.',
-        'The task code describes the substance of the work; the activity code describes how it was done.',
-        '"Third party" means anyone other than the client and the firm: the client is never a third party.',
-        'Any lawyer outside the firm (opposing counsel, co-counsel, counsel to another party) is "other outside counsel".',
-        'Reviewing or analyzing documents to advise the client is analysis and advice, not fact gathering.',
+        CODE_GUIDANCE,
         `Task codes:\n${list(codes.tasks)}`,
         `Activity codes:\n${list(codes.activities)}`,
       ].join('\n\n'),
@@ -122,4 +132,86 @@ export async function suggestCodes({ config, narrative, codes, fetchImpl = fetch
     throw Object.assign(new Error(`Model suggested unknown codes: ${out.task_code}/${out.activity_code}`), { status: 502 });
   }
   return { task_code: out.task_code, activity_code: out.activity_code };
+}
+
+const hhmm = (ms) => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+/**
+ * Propose splitting a day's work on a matter into separate entries (for clients
+ * that prohibit block billing). Uses the timeline — timer segments and
+ * timestamped notes — to apportion hours. Returns [{notes, narrative, hours,
+ * task_code?, activity_code?}] whose hours sum to totalHours.
+ */
+export async function proposeSplit({ config, matter, rules, notes, timeline, totalHours, codes, increment = 0.1, fetchImpl = fetch }) {
+  if (!notes?.trim() && !timeline.notes.length) throw Object.assign(new Error('Add notes or dictation describing the work first'), { status: 400 });
+  const lines = [
+    ...timeline.segments.map((s) => ({ ts: s.start_ms, text: `[timer ${hhmm(s.start_ms)}–${s.end_ms ? hhmm(s.end_ms) : 'now'}]` })),
+    ...timeline.notes.map((n) => ({ ts: n.ts, text: `${hhmm(n.ts)} ${n.source === 'dictated' ? '(dictated) ' : ''}${n.text}` })),
+  ].sort((a, b) => a.ts - b.ts);
+
+  const system = [
+    'You split a lawyer\'s day of work on one matter into separate billing entries, one task per entry.',
+    'The client prohibits block billing, so each distinct task (e.g., legal analysis; drafting an email or memo about it; each call or meeting) gets its own entry.',
+    rules.guidelines ? `Client billing guidelines (follow them exactly):\n${rules.guidelines}` : null,
+    `Allocate exactly ${totalHours} hours in total, in multiples of ${increment}, at least ${increment} per entry.`,
+    'Use the timestamps to apportion time: a note usually marks when that task began. Calls and emails are usually shorter than analysis.',
+    'For each entry give "notes": the part of the lawyer\'s shorthand notes it covers (copy their words, not the timeline), and "narrative": a polished past-tense narrative following this style guide:',
+    config.ai.styleGuide,
+    'Use only facts in the notes. Order entries chronologically.',
+    codes ? `Also choose the best UTBMS task and activity code for each entry.\n${CODE_GUIDANCE}` : null,
+    codes ? `Task codes:\n${Object.entries(codes.tasks).map(([c, l]) => `${c}: ${l}`).join('\n')}` : null,
+    codes ? `Activity codes:\n${Object.entries(codes.activities).map(([c, l]) => `${c}: ${l}`).join('\n')}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const user = [`Matter: ${matter.name}`, `Total time: ${totalHours} hours`, `Notes: ${notes || '(see timeline)'}`, lines.length ? `Timeline:\n${lines.map((l) => l.text).join('\n')}` : null]
+    .filter(Boolean)
+    .join('\n');
+
+  const item = {
+    type: 'object',
+    properties: {
+      notes: { type: 'string' },
+      narrative: { type: 'string' },
+      hours: { type: 'number' },
+      ...(codes
+        ? { task_code: { type: 'string', enum: Object.keys(codes.tasks) }, activity_code: { type: 'string', enum: Object.keys(codes.activities) } }
+        : {}),
+    },
+    required: ['notes', 'narrative', 'hours', ...(codes ? ['task_code', 'activity_code'] : [])],
+  };
+  const format = { type: 'object', properties: { entries: { type: 'array', items: item, minItems: 1 } }, required: ['entries'] };
+
+  const raw = await ollamaChat({ config, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], format, fetchImpl });
+  let entries;
+  try {
+    ({ entries } = JSON.parse(raw));
+  } catch {
+    throw Object.assign(new Error('Model returned an invalid split'), { status: 502 });
+  }
+  if (!Array.isArray(entries) || !entries.length) throw Object.assign(new Error('Model returned no entries'), { status: 502 });
+  return normalizeSplit(
+    entries.map((e) => ({ ...e, narrative: cleanNarrative(e.narrative ?? ''), notes: String(e.notes ?? '').trim() })),
+    totalHours,
+    increment,
+  );
+}
+
+/** Snap hours to the increment (min one increment each) and make them sum to the total. */
+export function normalizeSplit(entries, totalHours, increment = 0.1) {
+  const steps = (h) => Math.max(1, Math.round(Number(h) / increment) || 1);
+  const target = Math.round(totalHours / increment);
+  const out = entries.slice(0, Math.max(1, target)).map((e, i) => ({ ...e, steps: steps(e.hours), i }));
+  let diff = target - out.reduce((s, e) => s + e.steps, 0);
+  // Add to / take from the largest entries first, never below one increment.
+  // Ties: add to earlier entries, take from later ones.
+  while (diff !== 0) {
+    const sorted = [...out].sort((a, b) => b.steps - a.steps || (diff > 0 ? a.i - b.i : b.i - a.i));
+    const pickOne = diff > 0 ? sorted[0] : sorted.find((e) => e.steps > 1);
+    if (!pickOne) break;
+    pickOne.steps += diff > 0 ? 1 : -1;
+    diff += diff > 0 ? -1 : 1;
+  }
+  return out.map(({ steps: n, i: _i, ...e }) => ({ ...e, hours: Math.round(n * increment * 100) / 100 }));
 }

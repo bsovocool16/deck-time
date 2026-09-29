@@ -12,9 +12,19 @@ CREATE TABLE IF NOT EXISTS matters (
   color         TEXT NOT NULL DEFAULT '#3b82f6',
   task_code     TEXT NOT NULL DEFAULT '',
   activity_code TEXT NOT NULL DEFAULT '',
-  code_set      TEXT NOT NULL DEFAULT '',  -- '' = no task/activity codes; else a key in config.codes.taskSets
+  code_set      TEXT NOT NULL DEFAULT '',   -- '' = no task/activity codes; else a key in config.codes.taskSets
+  block_billing TEXT NOT NULL DEFAULT '',   -- '' = inherit from client | 'allowed' | 'prohibited'
+  guidelines    TEXT NOT NULL DEFAULT '',   -- matter-specific billing instructions (added to the client's)
   archived      INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL
+);
+
+-- Billing rules remembered per client number; apply to all of its matters.
+CREATE TABLE IF NOT EXISTS clients (
+  client_no        TEXT PRIMARY KEY,
+  name             TEXT NOT NULL DEFAULT '',
+  no_block_billing INTEGER NOT NULL DEFAULT 0,
+  guidelines       TEXT NOT NULL DEFAULT ''
 );
 
 -- Raw timer intervals. end_ms NULL = currently running.
@@ -26,11 +36,13 @@ CREATE TABLE IF NOT EXISTS segments (
 );
 CREATE INDEX IF NOT EXISTS segments_time ON segments(start_ms, end_ms);
 
--- One billable entry per (date, matter). Hours are derived from segments
--- unless hours_override is set.
+-- Billable entries. Part 0 is the matter's main entry for the day and gets the
+-- timer hours not allocated to other parts; parts 1..n are split-off entries
+-- with explicit hours (so the day always reconciles to the timer).
 CREATE TABLE IF NOT EXISTS entries (
   date           TEXT NOT NULL,
   matter_id      INTEGER NOT NULL REFERENCES matters(id),
+  part           INTEGER NOT NULL DEFAULT 0,
   notes          TEXT NOT NULL DEFAULT '',
   narrative      TEXT NOT NULL DEFAULT '',
   hours_override REAL,
@@ -39,33 +51,67 @@ CREATE TABLE IF NOT EXISTS entries (
   status         TEXT NOT NULL DEFAULT 'draft',  -- draft | ready | exported
   exported_at    INTEGER,
   updated_at     INTEGER NOT NULL,
-  PRIMARY KEY (date, matter_id)
+  PRIMARY KEY (date, matter_id, part)
 );
+
+-- Timestamped notes (typed or dictated) so work can be apportioned when splitting.
+CREATE TABLE IF NOT EXISTS note_events (
+  id        INTEGER PRIMARY KEY,
+  date      TEXT NOT NULL,
+  matter_id INTEGER NOT NULL REFERENCES matters(id),
+  ts        INTEGER NOT NULL,
+  text      TEXT NOT NULL,
+  source    TEXT NOT NULL DEFAULT 'typed'   -- typed | dictated
+);
+CREATE INDEX IF NOT EXISTS note_events_day ON note_events(date, matter_id);
 `;
 
-const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'archived'];
+const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'block_billing', 'guidelines', 'archived'];
+const CLIENT_FIELDS = ['name', 'no_block_billing', 'guidelines'];
 const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'status'];
+const STATUSES = new Set(['draft', 'ready', 'exported']);
+const BLOCK_BILLING = new Set(['', 'allowed', 'prohibited']);
 
 // Columns added after the first release: [table, column, definition]
 const MIGRATIONS = [
   ['matters', 'code_set', "TEXT NOT NULL DEFAULT ''"],
+  ['matters', 'block_billing', "TEXT NOT NULL DEFAULT ''"],
+  ['matters', 'guidelines', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'task_code', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'activity_code', "TEXT NOT NULL DEFAULT ''"],
 ];
-const STATUSES = new Set(['draft', 'ready', 'exported']);
+
+const round2 = (n) => Math.round(n * 100) / 100;
 
 export class Store extends EventEmitter {
   constructor(dbPath, getConfig, now = () => Date.now()) {
     super();
     this.db = new DatabaseSync(dbPath);
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+    this.#migrateEntriesToParts();
     this.db.exec(SCHEMA);
     for (const [table, col, def] of MIGRATIONS) {
-      const cols = this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-      if (!cols.includes(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+      if (!this.#columns(table).includes(col)) this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
     }
     this.getConfig = getConfig;
     this.now = now;
+  }
+
+  #columns(table) {
+    return this.db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  }
+
+  /** v0.1 entries had PRIMARY KEY (date, matter_id); rebuild with a part column. */
+  #migrateEntriesToParts() {
+    const cols = this.#columns('entries');
+    if (!cols.length || cols.includes('part')) return;
+    const keep = cols.join(', ');
+    this.db.exec(`BEGIN;
+      ALTER TABLE entries RENAME TO entries_v1;
+      ${SCHEMA.slice(SCHEMA.indexOf('CREATE TABLE IF NOT EXISTS entries'), SCHEMA.indexOf('-- Timestamped notes'))}
+      INSERT INTO entries (${keep}) SELECT ${keep} FROM entries_v1;
+      DROP TABLE entries_v1;
+      COMMIT;`);
   }
 
   close() {
@@ -89,6 +135,7 @@ export class Store extends EventEmitter {
   createMatter(input) {
     if (!input?.name?.trim()) throw httpError(400, 'Matter name is required');
     const m = pick(input, MATTER_FIELDS);
+    validateMatter(m);
     m.name = m.name.trim();
     if (!m.label) m.label = m.name.slice(0, 14);
     const cols = Object.keys(m);
@@ -102,6 +149,7 @@ export class Store extends EventEmitter {
   updateMatter(id, input) {
     if (!this.getMatter(id)) throw httpError(404, 'Matter not found');
     const m = pick(input, MATTER_FIELDS);
+    validateMatter(m);
     const cols = Object.keys(m);
     if (cols.length) {
       this.db.prepare(`UPDATE matters SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...cols.map((c) => m[c]), id);
@@ -109,6 +157,51 @@ export class Store extends EventEmitter {
     if (m.archived) this.stopIfRunning(id);
     this.emitChange();
     return this.getMatter(id);
+  }
+
+  // ---------- client billing rules ("memory") ----------
+
+  getClient(clientNo) {
+    const row = this.db.prepare('SELECT * FROM clients WHERE client_no = ?').get(clientNo);
+    return row ? plain(row) : { client_no: clientNo, name: '', no_block_billing: 0, guidelines: '' };
+  }
+
+  /** Every client number in use by a matter, plus any with saved rules. */
+  listClients() {
+    const nos = this.db
+      .prepare(`SELECT client_no FROM matters WHERE client_no != '' UNION SELECT client_no FROM clients ORDER BY client_no`)
+      .all()
+      .map((r) => r.client_no);
+    return nos.map((no) => ({
+      ...this.getClient(no),
+      matters: this.db.prepare('SELECT id, name FROM matters WHERE client_no = ? AND archived = 0 ORDER BY name').all(no).map(plain),
+    }));
+  }
+
+  updateClient(clientNo, input) {
+    if (!clientNo?.trim()) throw httpError(400, 'Client number is required');
+    const next = { ...this.getClient(clientNo), ...pick(input, CLIENT_FIELDS) };
+    next.no_block_billing = next.no_block_billing ? 1 : 0;
+    this.db
+      .prepare(
+        `INSERT INTO clients (client_no, name, no_block_billing, guidelines) VALUES (?, ?, ?, ?)
+         ON CONFLICT (client_no) DO UPDATE SET name = excluded.name, no_block_billing = excluded.no_block_billing, guidelines = excluded.guidelines`,
+      )
+      .run(clientNo, next.name, next.no_block_billing, next.guidelines);
+    this.emitChange();
+    return this.getClient(clientNo);
+  }
+
+  /** Effective billing rules for a matter: matter settings override the client's. */
+  rulesFor(matter) {
+    const client = matter.client_no ? this.getClient(matter.client_no) : null;
+    const noBlock = matter.block_billing ? matter.block_billing === 'prohibited' : !!client?.no_block_billing;
+    const guidelines = [client?.guidelines, matter.guidelines].map((g) => g?.trim()).filter(Boolean).join('\n');
+    return {
+      no_block_billing: noBlock,
+      source: matter.block_billing ? 'matter' : client?.no_block_billing ? 'client' : null,
+      guidelines,
+    };
   }
 
   // ---------- timers ----------
@@ -154,14 +247,25 @@ export class Store extends EventEmitter {
     if (current?.matter_id === matterId) this.stop();
   }
 
-  /** Append a quick note to today's entry for the running matter (or a given one). */
-  addNote(text, matterId) {
+  /** Append a note to today's main entry for the running matter (or a given one), and log it with a timestamp. */
+  addNote(text, matterId, source = 'typed') {
     const id = matterId ?? this.running()?.matter_id;
     if (!id) throw httpError(400, 'No timer running');
-    const date = localDate(this.now());
+    const clean = text.trim();
+    if (!clean) throw httpError(400, 'Note is empty');
+    const now = this.now();
+    const date = localDate(now);
+    this.db.prepare('INSERT INTO note_events (date, matter_id, ts, text, source) VALUES (?, ?, ?, ?, ?)').run(date, id, now, clean, source);
     const entry = this.getEntry(date, id);
-    const notes = entry.notes ? `${entry.notes}; ${text.trim()}` : text.trim();
+    const notes = entry.notes ? `${entry.notes}; ${clean}` : clean;
     return this.updateEntry(date, id, { notes });
+  }
+
+  /** What happened on a matter during a day: timer segments and timestamped notes. */
+  timeline(date, matterId) {
+    const segments = this.segmentsForDay(date).filter((s) => s.matter_id === matterId);
+    const notes = this.db.prepare('SELECT ts, text, source FROM note_events WHERE date = ? AND matter_id = ? ORDER BY ts').all(date, matterId).map(plain);
+    return { segments, notes };
   }
 
   segmentsForDay(date) {
@@ -196,66 +300,137 @@ export class Store extends EventEmitter {
 
   // ---------- entries ----------
 
-  getEntry(date, matterId) {
-    const row = this.db.prepare('SELECT * FROM entries WHERE date = ? AND matter_id = ?').get(date, matterId);
+  getEntry(date, matterId, part = 0) {
+    const row = this.db.prepare('SELECT * FROM entries WHERE date = ? AND matter_id = ? AND part = ?').get(date, matterId, part);
     return row
       ? plain(row)
-      : { date, matter_id: matterId, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', status: 'draft', exported_at: null };
+      : { date, matter_id: matterId, part, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', status: 'draft', exported_at: null };
   }
 
-  updateEntry(date, matterId, input) {
+  #parts(date, matterId) {
+    return this.db.prepare('SELECT * FROM entries WHERE date = ? AND matter_id = ? ORDER BY part').all(date, matterId).map(plain);
+  }
+
+  updateEntry(date, matterId, input, part = 0) {
     if (!this.getMatter(matterId)) throw httpError(404, 'Matter not found');
+    if (part > 0 && !this.db.prepare('SELECT 1 FROM entries WHERE date = ? AND matter_id = ? AND part = ?').get(date, matterId, part)) {
+      throw httpError(404, 'Entry not found');
+    }
     const patch = pick(input, ENTRY_FIELDS);
     if (patch.status && !STATUSES.has(patch.status)) throw httpError(400, 'Invalid status');
-    const next = { ...this.getEntry(date, matterId), ...patch };
+    if (part > 0 && 'hours_override' in patch && !(patch.hours_override > 0)) throw httpError(400, 'Split entries need hours');
+    const next = { ...this.getEntry(date, matterId, part), ...patch };
     if (patch.status === 'exported') next.exported_at = this.now();
+    this.#write(date, matterId, part, next);
+    this.emitChange();
+    return this.getEntry(date, matterId, part);
+  }
+
+  #write(date, matterId, part, e) {
     this.db
       .prepare(
-        `INSERT INTO entries (date, matter_id, notes, narrative, hours_override, task_code, activity_code, status, exported_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (date, matter_id) DO UPDATE SET
+        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, status, exported_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (date, matter_id, part) DO UPDATE SET
            notes = excluded.notes, narrative = excluded.narrative, hours_override = excluded.hours_override,
            task_code = excluded.task_code, activity_code = excluded.activity_code,
            status = excluded.status, exported_at = excluded.exported_at, updated_at = excluded.updated_at`,
       )
-      .run(date, matterId, next.notes, next.narrative, next.hours_override, next.task_code, next.activity_code, next.status, next.exported_at, this.now());
-    this.emitChange();
-    return this.getEntry(date, matterId);
+      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
   }
 
-  /** Everything for one day: an entry per matter that has time or an entry row. */
+  /** Split off a new entry for the same matter/day. Its hours come out of the main entry's. */
+  addPart(date, matterId, input = {}) {
+    if (!this.getMatter(matterId)) throw httpError(404, 'Matter not found');
+    const hours = Number(input.hours_override ?? input.hours ?? 0.1);
+    if (!(hours > 0)) throw httpError(400, 'Split entries need hours');
+    if (!this.#parts(date, matterId).some((p) => p.part === 0)) this.#write(date, matterId, 0, {});
+    const { next } = this.db.prepare('SELECT COALESCE(MAX(part), 0) + 1 AS next FROM entries WHERE date = ? AND matter_id = ?').get(date, matterId);
+    this.#write(date, matterId, next, { ...pick(input, ENTRY_FIELDS), hours_override: hours, status: 'draft' });
+    this.emitChange();
+    return this.getEntry(date, matterId, next);
+  }
+
+  deletePart(date, matterId, part) {
+    if (!(part > 0)) throw httpError(400, "The main entry can't be deleted; clear it instead");
+    this.db.prepare('DELETE FROM entries WHERE date = ? AND matter_id = ? AND part = ?').run(date, matterId, part);
+    this.emitChange();
+  }
+
+  /**
+   * Replace a matter's entries for the day with a split: the first item becomes
+   * the main entry (keeps the remainder of the timer hours), the rest become
+   * split-off entries with the given hours.
+   */
+  applySplit(date, matterId, items) {
+    if (!this.getMatter(matterId)) throw httpError(404, 'Matter not found');
+    if (!Array.isArray(items) || !items.length) throw httpError(400, 'Nothing to apply');
+    if (items.slice(1).some((i) => !(Number(i.hours) > 0))) throw httpError(400, 'Every split entry needs hours');
+    const main = this.getEntry(date, matterId, 0);
+    this.db.exec('BEGIN');
+    try {
+      this.db.prepare('DELETE FROM entries WHERE date = ? AND matter_id = ? AND part > 0').run(date, matterId);
+      const [first, ...rest] = items;
+      this.#write(date, matterId, 0, { ...main, ...pick(first, ['notes', 'narrative', 'task_code', 'activity_code']), hours_override: null, status: 'draft' });
+      rest.forEach((item, i) => {
+        this.#write(date, matterId, i + 1, { ...pick(item, ['notes', 'narrative', 'task_code', 'activity_code']), hours_override: round2(Number(item.hours)), status: 'draft' });
+      });
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    this.emitChange();
+    return this.day(date).entries.filter((e) => e.matter_id === matterId);
+  }
+
+  /** Everything for one day: entries (all parts) for every matter with time or a saved entry. */
   day(date) {
     const [start, end] = dayBounds(date);
     const now = this.now();
     const rounding = this.getConfig().rounding;
-    const byMatter = new Map();
+    const rawByMatter = new Map();
     for (const s of this.segmentsForDay(date)) {
       const ms = Math.min(s.end_ms ?? now, end) - Math.max(s.start_ms, start);
-      byMatter.set(s.matter_id, (byMatter.get(s.matter_id) ?? 0) + Math.max(ms, 0));
+      rawByMatter.set(s.matter_id, (rawByMatter.get(s.matter_id) ?? 0) + Math.max(ms, 0));
     }
-    for (const row of this.db.prepare('SELECT matter_id FROM entries WHERE date = ?').all(date)) {
-      if (!byMatter.has(row.matter_id)) byMatter.set(row.matter_id, 0);
+    for (const row of this.db.prepare('SELECT DISTINCT matter_id FROM entries WHERE date = ?').all(date)) {
+      if (!rawByMatter.has(row.matter_id)) rawByMatter.set(row.matter_id, 0);
     }
     const running = this.running();
-    const entries = [...byMatter.entries()].map(([matterId, rawMs]) => {
-      const entry = this.getEntry(date, matterId);
-      const computed = roundHours(rawMs, rounding);
+    const entries = [];
+    for (const [matterId, rawMs] of rawByMatter) {
       const matter = this.getMatter(matterId);
+      const rules = this.rulesFor(matter);
       const usesCodes = !!matter.code_set;
-      return {
-        ...entry,
-        matter,
-        // Effective codes: the entry's own, else the matter default; none if the matter doesn't use codes.
-        task: usesCodes ? entry.task_code || matter.task_code : '',
-        activity: usesCodes ? entry.activity_code || matter.activity_code : '',
-        raw_ms: rawMs,
-        computed_hours: computed,
-        hours: entry.hours_override ?? computed,
-        running: running?.matter_id === matterId,
-      };
-    });
-    entries.sort((a, b) => a.matter.name.localeCompare(b.matter.name));
-    const total = Math.round(entries.reduce((sum, e) => sum + e.hours, 0) * 100) / 100;
+      const computed = roundHours(rawMs, rounding);
+      const rows = this.#parts(date, matterId);
+      if (!rows.some((r) => r.part === 0)) rows.unshift(this.getEntry(date, matterId, 0));
+      const splitHours = round2(rows.filter((r) => r.part > 0).reduce((s, r) => s + (r.hours_override ?? 0), 0));
+      const remainder = round2(computed - splitHours);
+      for (const row of rows) {
+        const isMain = row.part === 0;
+        const hours = isMain ? (row.hours_override ?? Math.max(remainder, 0)) : row.hours_override;
+        entries.push({
+          ...row,
+          matter,
+          rules,
+          // Effective codes: the entry's own, else the matter default; none if the matter doesn't use codes.
+          task: usesCodes ? row.task_code || matter.task_code : '',
+          activity: usesCodes ? row.activity_code || matter.activity_code : '',
+          raw_ms: isMain ? rawMs : 0,
+          computed_hours: computed, // timer total for the matter (all parts)
+          split_hours: splitHours,
+          over_allocated: isMain && row.hours_override == null && remainder < 0,
+          parts: rows.length,
+          hours,
+          block_warning: rules.no_block_billing && looksBlockBilled(row.narrative),
+          running: isMain && running?.matter_id === matterId,
+        });
+      }
+    }
+    entries.sort((a, b) => a.matter.name.localeCompare(b.matter.name) || a.part - b.part);
+    const total = round2(entries.reduce((sum, e) => sum + e.hours, 0));
     return { date, entries, total_hours: total };
   }
 
@@ -277,7 +452,7 @@ export class Store extends EventEmitter {
     const running = this.running();
     const today = localDate(this.now());
     const { entries, total_hours } = this.day(today);
-    const todayMs = Object.fromEntries(entries.map((e) => [e.matter_id, e.raw_ms]));
+    const todayMs = Object.fromEntries(entries.filter((e) => e.part === 0).map((e) => [e.matter_id, e.raw_ms]));
     return {
       now: this.now(),
       today,
@@ -290,6 +465,33 @@ export class Store extends EventEmitter {
   emitChange() {
     this.emit('change');
   }
+}
+
+/**
+ * Heuristic: does a narrative bundle several tasks? Semicolons joining clauses,
+ * or "and"/"then" followed by another past-tense verb ("Reviewed X and drafted Y").
+ */
+export function looksBlockBilled(narrative = '') {
+  const text = narrative.trim();
+  if (!text) return false;
+  if (text.split(';').filter((p) => p.trim().length > 3).length > 1) return true;
+  // "Reviewed and analyzed X" is one task (verb pair up front); "Reviewed X and drafted Y" is two.
+  const joiner = /,?\s+(?:and|then)\s+(?:also\s+)?([a-z]+ed|drafted|wrote|sent|met|spoke|attended|began|prepared|led)\b/gi;
+  for (const m of text.matchAll(joiner)) {
+    const wordsBefore = text.slice(0, m.index).trim().split(/\s+/).length;
+    if (wordsBefore >= 2 && !NOT_TASK_VERBS.has(m[1].toLowerCase())) return true;
+  }
+  return false;
+}
+
+// Past-tense words that usually describe a noun, not a second task ("and related matters").
+const NOT_TASK_VERBS = new Set([
+  'related', 'associated', 'proposed', 'amended', 'restated', 'executed', 'requested', 'required', 'attached',
+  'enclosed', 'combined', 'continued', 'detailed', 'limited', 'certified', 'affiliated',
+]);
+
+function validateMatter(m) {
+  if ('block_billing' in m && !BLOCK_BILLING.has(m.block_billing)) throw httpError(400, 'Invalid block billing setting');
 }
 
 function plain(row) {

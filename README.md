@@ -89,6 +89,30 @@ In the Stream Deck app, drag from the **deck-time** category:
 Suggested Neo layout: 5 matter keys + Dictate + Stop + Review, with the info
 bar on top. Use the Neo's page buttons for more matters.
 
+## Client billing rules & block billing
+
+**Matters → Client billing rules** remembers instructions per client number:
+a *No block billing* switch and free-text guidelines (e.g. "separate legal
+analysis, the internal email about it, and any call into distinct entries").
+Every matter under that client inherits them. A matter can override
+(*prohibited* / *allowed*) and add its own guidelines. The rules are fed to
+the local model whenever it drafts for that client.
+
+On days when you've done several tasks for a no-block client:
+
+- **✂ Split into tasks** has the local model propose one entry per task, with
+  narrative, hours and codes, using your notes and the **timestamps** of your
+  quick notes and dictation to apportion the time. Edit the proposal, then
+  apply it.
+- **+ Split entry** splits one off by hand.
+- The timer total is the anchor: split-off entries have their own hours and
+  the main entry keeps the remainder, so the day always reconciles.
+- Export flags narratives that look block-billed ("…; …", "Reviewed X and
+  drafted Y") on no-block matters and asks before exporting anyway.
+
+Tip: dictate a quick note when you switch tasks ("starting email to team").
+It's timestamped, which makes the split much more accurate.
+
 ## Task / activity codes
 
 For matters that require UTBMS codes, set **Task/activity codes** on the matter

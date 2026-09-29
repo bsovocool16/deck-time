@@ -5,6 +5,9 @@ let state = null;
 let config = null;
 let day = todayStr();
 let lastSignature = '';
+const proposals = {}; // matterId -> pending AI split proposal
+
+const entryPath = (el) => `/api/entries/${day}/${el.dataset.matter}${+el.dataset.part ? `/${el.dataset.part}` : ''}`;
 
 // ---------- api ----------
 
@@ -15,7 +18,7 @@ async function api(path, { method = 'GET', body } = {}) {
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) throw Object.assign(new Error(data.error || res.statusText), { status: res.status, data });
   return data;
 }
 
@@ -146,36 +149,82 @@ function codeRow(e) {
   </div>`;
 }
 
+function rulesBadge(e) {
+  if (!e.rules.no_block_billing && !e.rules.guidelines) return '';
+  const tip = esc([e.rules.no_block_billing ? `No block billing (${e.rules.source} rule)` : '', e.rules.guidelines].filter(Boolean).join('\n'));
+  return e.rules.no_block_billing
+    ? `<span class="rule-badge" title="${tip}">No block billing</span>`
+    : `<span class="rule-badge soft" title="${tip}">Guidelines</span>`;
+}
+
+function entryCard(e) {
+  const main = e.part === 0;
+  const alloc =
+    main && e.parts > 1
+      ? `<div class="alloc ${e.over_allocated ? 'bad' : ''}">Timer ${e.computed_hours.toFixed(1)}h: ${e.split_hours.toFixed(1)}h split off, ${e.hours.toFixed(1)}h here${e.over_allocated ? '. Over-allocated: reduce the split entries' : ''}</div>`
+      : '';
+  return `
+    <div class="entry status-${e.status} ${main ? '' : 'part'}" style="--key-color:${esc(e.matter.color)}" data-matter="${e.matter_id}" data-part="${e.part}">
+      <div class="entry-head">
+        ${main ? `<span class="name">${esc(e.matter.name)}</span><span class="cm">${esc(clientMatter(e.matter))}</span>${rulesBadge(e)}` : `<span class="part-label">↳ split entry ${e.part}</span>`}
+        ${e.running ? '<span class="live-badge">● running</span>' : ''}
+        ${e.block_warning ? '<span class="warn-badge" title="This client prohibits block billing">looks block-billed</span>' : ''}
+        <span class="spacer"></span>
+        ${main ? `<span class="raw" title="Raw timer time">${clock(e.raw_ms)}</span>` : ''}
+        <input class="hours" type="number" step="0.1" min="0" name="hours" value="${e.hours.toFixed(1)}" title="${main ? 'Billable hours (edit to override)' : 'Hours for this split entry'}">
+        <select name="status">
+          ${['draft', 'ready', 'exported'].map((s) => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+        ${main ? '' : '<button class="icon danger" data-action="del-part" title="Remove this split entry (its hours go back to the main entry)">✕</button>'}
+      </div>
+      ${alloc}
+      <label>Notes (your shorthand)<textarea name="notes" rows="3" placeholder="e.g. tc w/ client re SPA reps; rev disclosure schedules">${esc(e.notes)}</textarea></label>
+      <label>Narrative (what gets exported)<textarea name="narrative" rows="3">${esc(e.narrative)}</textarea></label>
+      ${codeRow(e)}
+      <div class="narr-actions">
+        ${main && e.hours_override != null ? '<button data-action="reset-hours">Use timer hours</button>' : ''}
+        ${main ? '<button data-action="add-part" title="Split off a separate entry by hand">+ Split entry</button>' : ''}
+        ${main && (e.rules.no_block_billing || e.parts > 1) ? '<button data-action="propose-split" title="Let the local AI split the day into one entry per task">✂ Split into tasks</button>' : ''}
+        <button data-action="draft">✨ Draft narrative</button>
+      </div>
+    </div>`;
+}
+
+function proposalPanel(matterId, matter) {
+  const p = proposals[matterId];
+  if (!p) return '';
+  const set = config?.codes.taskSets[matter.code_set];
+  const sum = p.entries.reduce((s, e) => s + Number(e.hours || 0), 0);
+  const off = Math.abs(sum - p.total_hours) > 0.001;
+  return `<div class="split-panel" data-proposal="${matterId}">
+    <div class="split-head"><strong>Proposed split</strong> <span class="${off ? 'bad' : ''}">${sum.toFixed(1)} of ${p.total_hours.toFixed(1)}h</span>
+      <small>Review and edit before applying. The first row becomes the main entry.</small></div>
+    ${p.entries
+      .map(
+        (e, i) => `<div class="split-row" data-i="${i}">
+        <input type="number" step="0.1" min="0.1" name="hours" value="${Number(e.hours).toFixed(1)}">
+        <textarea name="narrative" rows="2">${esc(e.narrative)}</textarea>
+        ${set ? `<select name="task_code">${codeOptions(set.codes, e.task_code, '')}</select><select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, '')}</select>` : ''}
+        <button class="icon danger" data-action="drop-row" title="Remove row">✕</button>
+      </div>`,
+      )
+      .join('')}
+    <div class="split-actions"><button data-action="cancel-split">Cancel</button><button class="primary" data-action="apply-split" ${off ? 'title="Hours don\'t add up; the main entry will absorb the difference"' : ''}>Apply split</button></div>
+  </div>`;
+}
+
 function renderEntries({ entries }) {
   if (!entries.length) {
     $('#entries').innerHTML = `<div class="empty-state">No time recorded for ${day}. Tap a key to start a timer.</div>`;
     return;
   }
-  $('#entries').innerHTML = entries
-    .map(
-      (e) => `
-    <div class="entry status-${e.status}" style="--key-color:${esc(e.matter.color)}" data-matter="${e.matter_id}">
-      <div class="entry-head">
-        <span class="name">${esc(e.matter.name)}</span>
-        <span class="cm">${esc(clientMatter(e.matter))}</span>
-        ${e.running ? '<span class="live-badge">● running</span>' : ''}
-        <span class="spacer"></span>
-        <span class="raw" title="Raw timer time">${clock(e.raw_ms)}</span>
-        <input class="hours" type="number" step="0.1" min="0" name="hours" value="${e.hours.toFixed(1)}" title="Billable hours (edit to override)">
-        <select name="status">
-          ${['draft', 'ready', 'exported'].map((s) => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}
-        </select>
-      </div>
-      <label>Notes (your shorthand)<textarea name="notes" rows="3" placeholder="e.g. tc w/ client re SPA reps; rev disclosure schedules">${esc(e.notes)}</textarea></label>
-      <label>Narrative (what gets exported)<textarea name="narrative" rows="3">${esc(e.narrative)}</textarea></label>
-      ${codeRow(e)}
-      <div class="narr-actions">
-        ${e.hours_override != null ? '<button data-action="reset-hours">Use timer hours</button>' : ''}
-        <button data-action="draft">✨ Draft narrative</button>
-      </div>
-    </div>`,
-    )
-    .join('');
+  const html = [];
+  entries.forEach((e, i) => {
+    html.push(entryCard(e));
+    const lastOfMatter = entries[i + 1]?.matter_id !== e.matter_id;
+    if (lastOfMatter) html.push(proposalPanel(e.matter_id, e.matter));
+  });
+  $('#entries').innerHTML = html.join('');
 }
 
 function renderSegments(segs) {
@@ -208,7 +257,42 @@ function timeOnDay(hm) {
 
 // ---------- matters tab ----------
 
+let clientsCache = [];
+const clientRule = (no) => (clientsCache.find((c) => c.client_no === no)?.no_block_billing ? 'No block (client)' : '');
+
+async function renderClients() {
+  clientsCache = await api('/api/clients');
+  $('#clients').innerHTML = clientsCache.length
+    ? clientsCache
+        .map(
+          (c) => `<form class="card client-card" data-client="${esc(c.client_no)}">
+        <div class="client-head">
+          <strong>${esc(c.client_no)}</strong>
+          <input name="name" value="${esc(c.name)}" placeholder="Client name (optional)">
+          <label class="check"><input type="checkbox" name="no_block_billing" ${c.no_block_billing ? 'checked' : ''}> No block billing</label>
+        </div>
+        <textarea name="guidelines" rows="2" placeholder="e.g. Separate legal analysis, internal emails about it, and any calls into distinct entries.">${esc(c.guidelines)}</textarea>
+        <div class="client-foot"><small>${c.matters.map((m) => esc(m.name)).join(' · ') || 'no active matters'}</small><button type="submit">Save</button></div>
+      </form>`,
+        )
+        .join('')
+    : '<div class="empty-state">Add a matter with a client number to set client rules.</div>';
+}
+
+document.addEventListener('submit', guard(async (ev) => {
+  const form = ev.target.closest('.client-card');
+  if (!form) return;
+  ev.preventDefault();
+  await api(`/api/clients/${encodeURIComponent(form.dataset.client)}`, {
+    method: 'PUT',
+    body: { name: form.name.value.trim(), no_block_billing: form.no_block_billing.checked, guidelines: form.guidelines.value.trim() },
+  });
+  toast('Client rules saved');
+  renderMatters();
+}));
+
 async function renderMatters() {
+  await renderClients();
   const matters = await api('/api/matters?all=1');
   $('#matters-table tbody').innerHTML = matters
     .map(
@@ -216,6 +300,7 @@ async function renderMatters() {
       <td><span class="swatch" style="background:${esc(m.color)}"></span></td>
       <td>${esc(m.name)}</td><td>${esc(m.label)}</td><td>${esc(clientMatter(m))}</td>
       <td>${m.code_set ? esc([config?.codes.taskSets[m.code_set]?.label ?? m.code_set, m.task_code, m.activity_code].filter(Boolean).join(' · ')) : '<span style="opacity:.5">none</span>'}</td>
+      <td>${esc(m.block_billing === 'prohibited' ? 'No block (matter)' : m.block_billing === 'allowed' ? 'Block OK (matter)' : clientRule(m.client_no))}</td>
       <td><button data-action="edit">Edit</button> <button data-action="archive">${m.archived ? 'Restore' : 'Archive'}</button></td>
     </tr>`,
     )
@@ -289,7 +374,7 @@ document.addEventListener('click', guard(async (ev) => {
     t.textContent = 'Drafting…';
     try {
       await saveEntryField(entry, entry.querySelector('[name=notes]'));
-      await api(`/api/entries/${day}/${entry.dataset.matter}/narrate`, { method: 'POST', body: {} });
+      await api(`${entryPath(entry)}/narrate`, { method: 'POST', body: {} });
     } finally {
       await refreshDay(true);
     }
@@ -300,14 +385,46 @@ document.addEventListener('click', guard(async (ev) => {
     t.textContent = 'Thinking…';
     try {
       await saveEntryField(entry, entry.querySelector('[name=narrative]'));
-      await api(`/api/entries/${day}/${entry.dataset.matter}/codes`, { method: 'POST', body: {} });
+      await api(`${entryPath(entry)}/codes`, { method: 'POST', body: {} });
     } finally {
       await refreshDay(true);
     }
     return;
   }
+  if (entry && t.dataset.action === 'add-part') {
+    await api(`/api/entries/${day}/${entry.dataset.matter}/parts`, { method: 'POST', body: { hours: 0.1 } });
+    return refreshDay(true);
+  }
+  if (entry && t.dataset.action === 'del-part') {
+    await api(entryPath(entry), { method: 'DELETE' });
+    return refreshDay(true);
+  }
+  if (entry && t.dataset.action === 'propose-split') {
+    t.disabled = true;
+    t.textContent = 'Splitting…';
+    try {
+      await saveEntryField(entry, entry.querySelector('[name=notes]'));
+      proposals[entry.dataset.matter] = await api(`/api/entries/${day}/${entry.dataset.matter}/split/propose`, { method: 'POST', body: {} });
+    } finally {
+      await refreshDay(true);
+    }
+    return;
+  }
+  const panel = t.closest('[data-proposal]');
+  if (panel) {
+    const matterId = panel.dataset.proposal;
+    readProposal(panel);
+    if (t.dataset.action === 'drop-row') proposals[matterId].entries.splice(+t.closest('.split-row').dataset.i, 1);
+    if (t.dataset.action === 'cancel-split' || !proposals[matterId].entries.length) delete proposals[matterId];
+    if (t.dataset.action === 'apply-split') {
+      await api(`/api/entries/${day}/${matterId}/split/apply`, { method: 'POST', body: { entries: proposals[matterId].entries } });
+      delete proposals[matterId];
+      toast('Split applied');
+    }
+    return refreshDay(true);
+  }
   if (entry && t.dataset.action === 'reset-hours') {
-    await api(`/api/entries/${day}/${entry.dataset.matter}`, { method: 'PATCH', body: { hours_override: null } });
+    await api(entryPath(entry), { method: 'PATCH', body: { hours_override: null } });
     return refreshDay(true);
   }
 
@@ -334,13 +451,26 @@ document.addEventListener('click', guard(async (ev) => {
 }));
 
 async function saveEntryField(entry, el) {
-  const matterId = entry.dataset.matter;
   const body = el.name === 'hours' ? { hours_override: el.value === '' ? null : +el.value } : { [el.name]: el.value };
-  await api(`/api/entries/${day}/${matterId}`, { method: 'PATCH', body });
+  await api(entryPath(entry), { method: 'PATCH', body });
+}
+
+/** Pull edits from the proposal panel back into memory. */
+function readProposal(panel) {
+  const p = proposals[panel.dataset.proposal];
+  panel.querySelectorAll('.split-row').forEach((row) => {
+    const e = p.entries[+row.dataset.i];
+    for (const el of row.querySelectorAll('[name]')) e[el.name] = el.name === 'hours' ? +el.value : el.value;
+  });
 }
 
 document.addEventListener('change', guard(async (ev) => {
   const el = ev.target;
+  const panel = el.closest('[data-proposal]');
+  if (panel) {
+    readProposal(panel);
+    return;
+  }
   const entry = el.closest('.entry');
   if (entry) {
     await saveEntryField(entry, el);
@@ -401,7 +531,14 @@ $('#draft-all').addEventListener('click', guard(async (ev) => {
 }));
 
 async function doExport(format) {
-  const out = await api('/api/export', { method: 'POST', body: { date: day, format } });
+  let out;
+  try {
+    out = await api('/api/export', { method: 'POST', body: { date: day, format } });
+  } catch (e) {
+    if (e.status !== 409 || !e.data?.warnings) throw e;
+    if (!confirm(`${e.data.warnings.join('\n')}\n\nExport anyway?`)) return;
+    out = await api('/api/export', { method: 'POST', body: { date: day, format, force: true } });
+  }
   const blob = new Blob([out.body], { type: 'text/plain' });
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: out.filename });
   a.click();
