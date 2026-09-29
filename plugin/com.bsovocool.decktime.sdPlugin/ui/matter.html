@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Matter Timer</title>
+  <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+</head>
+<body>
+  <!-- The list comes from the deck-time app via the plugin (see onSendToPlugin). -->
+  <sdpi-item label="Matter">
+    <sdpi-select setting="matterId" datasource="getMatters" hot-reload loading="Loading matters…" placeholder="Choose a matter"></sdpi-select>
+  </sdpi-item>
+  <sdpi-item label="">
+    <p style="margin:0;font-size:11px;opacity:.7">Add or rename matters in the deck-time app (Review key → Matters).</p>
+  </sdpi-item>
+</body>
+</html>

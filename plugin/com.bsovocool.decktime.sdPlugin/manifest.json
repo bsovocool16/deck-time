@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "deck-time",
+  "Version": "0.1.0.0",
+  "Author": "bsovocool16",
+  "Description": "One-tap matter timers, local dictation, and Intapp Time export.",
+  "UUID": "com.bsovocool.decktime",
+  "Category": "deck-time",
+  "CategoryIcon": "imgs/plugin/category",
+  "Icon": "imgs/plugin/marketplace",
+  "CodePath": "bin/plugin.js",
+  "SDKVersion": 3,
+  "Software": { "MinimumVersion": "7.6" },
+  "OS": [{ "Platform": "mac", "MinimumVersion": "12" }],
+  "Nodejs": { "Version": "24", "Debug": "enabled" },
+  "Actions": [
+    {
+      "Name": "Matter Timer",
+      "UUID": "com.bsovocool.decktime.matter",
+      "Icon": "imgs/actions/timer",
+      "Tooltip": "Tap to start timing a matter; tap again to stop. Starting one stops any other.",
+      "PropertyInspectorPath": "ui/matter.html",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [{ "Image": "imgs/actions/timer", "ShowTitle": false }]
+    },
+    {
+      "Name": "Dictate Note",
+      "UUID": "com.bsovocool.decktime.dictate",
+      "Icon": "imgs/actions/mic",
+      "Tooltip": "Hold to talk, or tap to start/stop. Adds a transcribed note to the running timer.",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [{ "Image": "imgs/actions/mic", "ShowTitle": false }]
+    },
+    {
+      "Name": "Stop Timer",
+      "UUID": "com.bsovocool.decktime.stop",
+      "Icon": "imgs/actions/stop",
+      "Tooltip": "Stops the running timer. Shows today's billable hours.",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [{ "Image": "imgs/actions/stop", "ShowTitle": false }]
+    },
+    {
+      "Name": "Review Day",
+      "UUID": "com.bsovocool.decktime.review",
+      "Icon": "imgs/actions/review",
+      "Tooltip": "Opens today's entries to edit notes, draft narratives, and export to Intapp.",
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "States": [{ "Image": "imgs/actions/review", "ShowTitle": false }]
+    },
+    {
+      "Name": "Timer Info Bar",
+      "UUID": "com.bsovocool.decktime.infobar",
+      "Icon": "imgs/actions/timer",
+      "Tooltip": "Stream Deck Neo info bar: shows the running matter and elapsed time.",
+      "Controllers": ["Neo"],
+      "Encoder": { "layout": "layouts/infobar.json" },
+      "States": [{ "Image": "imgs/actions/timer" }]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Personal data never goes in the repo: matters, time, config, exports.
+data/
+*.db
+*.db-*
+*.tim
+!docs/samples/*.example.tim
+config.json
+exports/
+
+# Stream Deck build output
+plugin/com.bsovocool.decktime.sdPlugin/bin/
+plugin/*.streamDeckPlugin

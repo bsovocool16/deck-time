@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>deck-time</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">deck-time</div>
+    <nav>
+      <button data-tab="today" class="tab active">Today</button>
+      <button data-tab="matters" class="tab">Matters</button>
+      <button data-tab="settings" class="tab">Settings</button>
+    </nav>
+    <div class="total" id="total" title="Billable hours today">0.0 h</div>
+  </header>
+
+  <section id="running" class="running idle">
+    <div class="running-info">
+      <span class="dot"></span>
+      <span id="running-label">No timer running</span>
+      <span id="running-elapsed" class="elapsed"></span>
+    </div>
+    <form id="note-form" class="note-form">
+      <input id="note-input" placeholder="Quick note for the running matter (e.g. call w/ opp re NDA)" autocomplete="off">
+      <button type="submit">Add note</button>
+      <button type="button" id="dictate-btn" title="Record a note with your mic (transcribed locally)">🎙 Dictate</button>
+      <button type="button" id="stop-btn" class="danger">Stop</button>
+    </form>
+  </section>
+
+  <main>
+    <!-- TODAY -->
+    <section data-panel="today" class="panel">
+      <h2>Deck <small>click a key to start/stop; mirrors the Stream Deck</small></h2>
+      <div id="deck" class="deck"></div>
+
+      <div class="day-head">
+        <h2>Entries</h2>
+        <div class="day-nav">
+          <button id="prev-day" aria-label="Previous day">&larr;</button>
+          <input type="date" id="day">
+          <button id="next-day" aria-label="Next day">&rarr;</button>
+        </div>
+        <div class="day-actions">
+          <button id="draft-all">Draft missing narratives</button>
+          <button id="export-tim" class="primary">Export .tim</button>
+          <button id="export-csv">Export .csv</button>
+        </div>
+      </div>
+      <div id="entries"></div>
+
+      <details class="timeline">
+        <summary>Timeline (raw timer segments)</summary>
+        <table id="segments"><thead><tr><th>Matter</th><th>Start</th><th>End</th><th>Minutes</th><th></th></tr></thead><tbody></tbody></table>
+        <form id="add-segment" class="inline-form">
+          <select name="matter_id" required></select>
+          <input type="time" name="start" required>
+          <input type="time" name="end" required>
+          <button type="submit">Add manual time</button>
+        </form>
+      </details>
+    </section>
+
+    <!-- MATTERS -->
+    <section data-panel="matters" class="panel hidden">
+      <h2>Matters</h2>
+      <form id="matter-form" class="card grid-form">
+        <input type="hidden" name="id">
+        <label>Name <input name="name" required placeholder="Alpha / Beta merger"></label>
+        <label>Key label <input name="label" maxlength="14" placeholder="Alpha M&A"></label>
+        <label>Client # <input name="client_no"></label>
+        <label>Matter # <input name="matter_no"></label>
+        <label>Task code <input name="task_code" placeholder="optional"></label>
+        <label>Activity code <input name="activity_code" placeholder="optional"></label>
+        <label>Color <input name="color" type="color" value="#3b82f6"></label>
+        <div class="form-actions">
+          <button type="submit" class="primary">Save matter</button>
+          <button type="reset">Clear</button>
+        </div>
+      </form>
+      <table id="matters-table"><thead><tr><th></th><th>Name</th><th>Label</th><th>Client-Matter</th><th>Codes</th><th></th></tr></thead><tbody></tbody></table>
+    </section>
+
+    <!-- SETTINGS -->
+    <section data-panel="settings" class="panel hidden">
+      <h2>Settings</h2>
+      <form id="settings-form" class="card grid-form">
+        <h3>Timekeeper</h3>
+        <label>Timekeeper ID <input name="timekeeper.id"></label>
+        <label>Name <input name="timekeeper.name"></label>
+
+        <h3>Rounding</h3>
+        <label>Increment (hours) <input name="rounding.increment" type="number" step="0.05" min="0.05"></label>
+        <label>Mode <select name="rounding.mode"><option value="up">Round up</option><option value="nearest">Nearest</option></select></label>
+        <label>Minimum (hours) <input name="rounding.minimum" type="number" step="0.05" min="0"></label>
+
+        <h3>AI (local, via Ollama) <span id="ai-status" class="pill"></span></h3>
+        <label>Ollama URL <input name="ai.baseUrl"></label>
+        <label>Model <input name="ai.model" list="ai-models"><datalist id="ai-models"></datalist></label>
+        <label class="wide">House style guide <textarea name="ai.styleGuide" rows="6"></textarea></label>
+
+        <h3>Intapp .TIM export <span id="tim-status" class="pill"></span></h3>
+        <label class="wide">Learn format from an Intapp export
+          <input type="file" id="tim-learn" accept=".tim,.TIM,.txt">
+          <small>Export a few entries from Intapp Time (any matter) and pick the file here. The file is read locally to copy Intapp's constant fields and your timekeeper ID. Nothing is uploaded.</small>
+        </label>
+        <label class="wide">Constant fields written on every entry (key=value, one per line)
+          <textarea name="tim.defaults" rows="8" spellcheck="false"></textarea>
+        </label>
+        <div class="form-actions"><button type="submit" class="primary">Save settings</button></div>
+      </form>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
