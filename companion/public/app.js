@@ -146,7 +146,6 @@ function codeRow(e) {
   return `<div class="codes ${missing ? 'missing' : ''}">
     <label>Task code<select name="task_code">${codeOptions(set.codes, e.task_code, e.matter.task_code)}</select></label>
     <label>Activity code<select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, e.matter.activity_code)}</select></label>
-    <button data-action="codes" title="Let the local AI pick codes from the narrative">Suggest codes</button>
   </div>`;
 }
 
@@ -184,6 +183,7 @@ function entryCard(e) {
       ${codeRow(e)}
       <div class="narr-actions">
         ${main && e.hours_override != null ? '<button data-action="reset-hours">Use timer hours</button>' : ''}
+        ${config?.codes.taskSets[e.matter.code_set] ? '<button data-action="codes" title="Let the local AI pick codes from the narrative">Suggest codes</button>' : ''}
         ${main ? '<button data-action="add-part" title="Split off a separate entry by hand">Add split</button>' : ''}
         ${main && (e.rules.no_block_billing || e.parts > 1) ? '<button data-action="propose-split" title="Let the local AI split the day into one entry per task">Split into tasks</button>' : ''}
         <button data-action="draft">Draft narrative</button>

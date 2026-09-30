@@ -8,16 +8,19 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">deck-time</div>
-    <nav>
-      <button data-tab="today" class="tab active">Today</button>
-      <button data-tab="matters" class="tab">Matters</button>
-      <button data-tab="settings" class="tab">Settings</button>
-    </nav>
-    <div class="total" id="total" title="Billable hours today">0.0 h</div>
+    <div class="wrap">
+      <div class="brand">deck-time</div>
+      <nav>
+        <button data-tab="today" class="tab active">Today</button>
+        <button data-tab="matters" class="tab">Matters</button>
+        <button data-tab="settings" class="tab">Settings</button>
+      </nav>
+      <div class="total" id="total" title="Billable hours today">0.0 h</div>
+    </div>
   </header>
 
   <section id="running" class="running idle">
+    <div class="wrap">
     <div class="running-info">
       <span class="dot" aria-hidden="true"></span>
       <span id="running-label">No timer running</span>
@@ -30,9 +33,10 @@
       <button type="button" id="next-task-btn" title="Close the current task and start the next on the same matter. Text in the note box becomes the new task's label.">Next task</button>
       <button type="button" id="stop-btn" class="danger">Stop</button>
     </form>
+    </div>
   </section>
 
-  <main>
+  <main class="wrap">
     <!-- TODAY -->
     <section data-panel="today" class="panel">
       <div class="section-head">
