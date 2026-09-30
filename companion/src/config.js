@@ -7,16 +7,38 @@ import { ACTIVITY_CODES, TASK_SETS } from './codes.js';
 // Large models live in the repo's (gitignored) models/ folder, e.g. on an external disk.
 export const MODELS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'models');
 
-// All personal data (DB, config, exports) lives outside the repo.
-export const HOME = process.env.DECK_TIME_HOME || path.join(os.homedir(), '.deck-time');
-export const CONFIG_PATH = path.join(HOME, 'config.json');
-export const DB_PATH = path.join(HOME, 'deck-time.db');
-export const EXPORT_DIR = path.join(HOME, 'exports');
+// All personal data (DB, config, exports) lives outside the repo:
+// ~/.deck-time on macOS, %APPDATA%\deck-time on Windows.
+export function defaultHome() {
+  if (process.env.DECK_TIME_HOME) return process.env.DECK_TIME_HOME;
+  if (process.platform === 'win32' && process.env.APPDATA) return path.join(process.env.APPDATA, 'deck-time');
+  return path.join(os.homedir(), '.deck-time');
+}
+
+export function pathsFor(home) {
+  return {
+    home,
+    config: path.join(home, 'config.json'),
+    db: path.join(home, 'deck-time.db'),
+    demoDb: path.join(home, 'demo.db'), // fictional matters for showing people; never mixed with real data
+    exports: path.join(home, 'exports'),
+  };
+}
+
+export const HOME = defaultHome();
+export const CONFIG_PATH = pathsFor(HOME).config;
+export const DB_PATH = pathsFor(HOME).db;
+export const EXPORT_DIR = pathsFor(HOME).exports;
 
 const brew = (bin) => (fs.existsSync(`/opt/homebrew/bin/${bin}`) ? `/opt/homebrew/bin/${bin}` : bin);
 
 export const DEFAULTS = {
   port: 7331,
+  // Which optional parts are on. The office edition (inside the Stream Deck
+  // plugin, for machines without a local model) turns both off.
+  features: { ai: true, dictation: true },
+  workspace: 'real', // 'real' | 'demo' (fictional matters for showing people)
+  embedded: true, // let the Stream Deck plugin run deck-time itself; set false where you run `npm start` instead
   deck: { columns: 4, rows: 2 }, // Stream Deck Neo
   dictation: {
     recorder: brew('rec'), // sox; records from the macOS default input
@@ -95,22 +117,29 @@ export function deepMerge(base, over) {
   return out;
 }
 
-export function loadConfig() {
-  fs.mkdirSync(HOME, { recursive: true });
+export const EDITIONS = {
+  full: {},
+  office: { features: { ai: false, dictation: false } },
+};
+
+export function loadConfig(home = HOME, edition = 'full') {
+  const { config: file } = pathsFor(home);
+  const base = deepMerge(DEFAULTS, EDITIONS[edition] ?? {});
+  fs.mkdirSync(home, { recursive: true });
   let user = {};
-  if (fs.existsSync(CONFIG_PATH)) {
-    user = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+  if (fs.existsSync(file)) {
+    user = JSON.parse(fs.readFileSync(file, 'utf8'));
   } else {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(DEFAULTS, null, 2));
+    fs.writeFileSync(file, JSON.stringify(base, null, 2));
   }
-  const cfg = deepMerge(DEFAULTS, user);
+  const cfg = deepMerge(base, user);
   // Learned .TIM defaults replace ours wholesale (keys may have been removed).
   if (user.tim?.defaults) cfg.tim.defaults = user.tim.defaults;
   return cfg;
 }
 
-export function saveConfig(cfg) {
-  fs.mkdirSync(HOME, { recursive: true });
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
+export function saveConfig(cfg, home = HOME) {
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(pathsFor(home).config, JSON.stringify(cfg, null, 2));
   return cfg;
 }

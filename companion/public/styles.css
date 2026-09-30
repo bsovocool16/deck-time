@@ -336,6 +336,17 @@ td button { height: 24px; }
 .client-foot small { color: var(--muted); }
 label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap; font-size: 13px; color: var(--ink); }
 
+/* ---------- editions & demo day ---------- */
+
+.no-ai [data-action="draft"], .no-ai [data-action="codes"], .no-ai #draft-all, .no-ai .ai-only { display: none !important; }
+.no-dictation #dictate-btn, .no-dictation .deck-fns [data-kind="dictate"] { display: none !important; }
+.demo-banner { background: var(--warn); color: var(--sheet); font-size: 13px; }
+.demo-banner .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding-block: 7px; }
+.demo-banner button.link { color: inherit; text-decoration-color: currentColor; }
+.demo-banner button.link:hover:not(:disabled) { color: inherit; }
+.workspace-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+#workspace-settings small.wide { grid-column: 1 / -1; }
+
 /* ---------- toast ---------- */
 
 .toast {

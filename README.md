@@ -28,12 +28,36 @@ one-click export to **Intapp Time** (`.TIM`).
 transcription, and the server only listens on `127.0.0.1` and rejects cross-site
 requests. Matters, time, and config live in `~/.deck-time/`, **never in this repo**.
 
+## Editions
+
+| | Full (your Mac) | Office (work PC) |
+|---|---|---|
+| Runs as | `npm start` (Node 22.13+) | inside the Stream Deck plugin; nothing else to install |
+| Timers, keys, sidebar, notes, splits, client rules, `.TIM` export | yes | yes |
+| AI narratives and code suggestions | yes (local Ollama) | off |
+| Dictation | yes (sox + Whisper) | off |
+| Data folder | `~/.deck-time` | `%APPDATA%\deck-time` (Windows) |
+
+**Office edition install:** install the Stream Deck app, then double-click
+`com.bsovocool.decktime.streamDeckPlugin` (build it with `cd plugin && npm run
+build && npm run pack`; it lands in `dist/`). Put the **deck-time Key** action on
+each key, press any key marked *Empty* to open the app, and arrange matters
+from the sidebar. For IT review, see [docs/IT-OVERVIEW.md](docs/IT-OVERVIEW.md).
+
+When the plugin starts it runs deck-time itself unless one is already running
+on the machine. On a Mac where you use the full edition, set `"embedded": false`
+in `~/.deck-time/config.json` so the plugin always uses your `npm start` copy.
+
+**Demo day:** Settings → *Demo day* swaps in fictional matters (kept in a
+separate `demo.db`) so you can show deck-time without client names on screen.
+
 ## Setup
 
 Requires Node 22.13+ (24 recommended) and macOS.
 
 ```bash
-npm start            # companion app → http://127.0.0.1:7331
+npm start            # companion app (full edition) → http://127.0.0.1:7331
+DECK_TIME_EDITION=office npm start   # try the office edition
 npm run demo         # same, with fictional matters in ./data/demo
 npm test
 ```
@@ -177,10 +201,15 @@ non-billable matter first.
 ## Layout
 
 ```
-companion/src/     server.js (HTTP + SSE), store.js (SQLite), export.js (.TIM/CSV),
-                   ai.js (Ollama), dictation.js (sox + whisper), time.js, config.js
+companion/src/     main.js (CLI entry), host.js (startup, editions, demo day),
+                   server.js (HTTP + SSE), store.js (SQLite), export.js (.TIM/CSV),
+                   ai.js (Ollama), dictation.js (sox + whisper), demo-seed.js,
+                   codes.js, time.js, config.js
 companion/public/  review UI (vanilla JS), includes a clickable virtual deck
-plugin/            Stream Deck plugin (TypeScript, @elgato/streamdeck v3)
+plugin/            Stream Deck plugin (TypeScript, @elgato/streamdeck v3); hosts the
+                   office edition. `node plugin/scripts/simulate.mjs` exercises the
+                   built plugin without hardware.
+demo/              hosted demo (in-browser mock of the API); `npm run build:demo`
 scripts/           tim-inspect.js, seed-demo.js
 ```
 

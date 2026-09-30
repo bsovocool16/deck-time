@@ -189,7 +189,7 @@ export class Store extends EventEmitter {
     const saved = new Map(this.db.prepare('SELECT * FROM deck_layout').all().map((r) => [r.slot, plain(r)]));
     if (!saved.size) {
       const matters = this.listMatters().filter((m) => !/admin|non-billable/i.test(m.name));
-      const fns = size >= 6 ? DECK_FUNCTIONS : [];
+      const fns = size < 6 ? [] : this.getConfig().features?.dictation === false ? ['next-task', 'stop'] : DECK_FUNCTIONS;
       return Array.from({ length: size }, (_, slot) => {
         const fnIndex = slot - (size - fns.length);
         if (fnIndex >= 0) return { slot, kind: fns[fnIndex], matter_id: null };
@@ -436,10 +436,10 @@ export class Store extends EventEmitter {
       .map(plain);
   }
 
-  addSegment({ matter_id, start_ms, end_ms }) {
+  addSegment({ matter_id, start_ms, end_ms, task = 0 }) {
     if (!this.getMatter(matter_id)) throw httpError(404, 'Matter not found');
     if (!(end_ms > start_ms)) throw httpError(400, 'End must be after start');
-    this.db.prepare('INSERT INTO segments (matter_id, start_ms, end_ms) VALUES (?, ?, ?)').run(matter_id, start_ms, end_ms);
+    this.db.prepare('INSERT INTO segments (matter_id, start_ms, end_ms, task) VALUES (?, ?, ?, ?)').run(matter_id, start_ms, end_ms, task);
     this.emitChange();
   }
 

@@ -3,15 +3,48 @@
 <head>
   <meta charset="utf-8" />
   <title>Matter Timer</title>
-  <script src="https://sdpi-components.dev/releases/v4/sdpi-components.js"></script>
+  <!-- Self-contained (no external scripts), so the plugin makes no internet requests. -->
+  <style>
+    body { margin: 0; padding: 8px 12px; font: 12px/1.4 -apple-system, "Segoe UI", sans-serif; color: #d8d8d8; background: transparent; }
+    label { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; }
+    select { width: 100%; height: 26px; background: #3d3d3d; color: #d8d8d8; border: 1px solid #4a4a4a; border-radius: 3px; font: inherit; }
+    p { margin: 10px 0 0 98px; opacity: 0.7; font-size: 11px; }
+  </style>
 </head>
 <body>
-  <!-- The list comes from the deck-time app via the plugin (see onSendToPlugin). -->
-  <sdpi-item label="Matter">
-    <sdpi-select setting="matterId" datasource="getMatters" hot-reload loading="Loading matters…" placeholder="Choose a matter"></sdpi-select>
-  </sdpi-item>
-  <sdpi-item label="">
-    <p style="margin:0;font-size:11px;opacity:.7">Add or rename matters in the deck-time app (Review key → Matters).</p>
-  </sdpi-item>
+  <label>Matter <select id="matter"><option value="">Loading matters…</option></select></label>
+  <p>Add or rename matters in the deck-time app (Review key, then Matters). Or use the “deck-time Key” action to arrange keys from the app’s sidebar.</p>
+  <script>
+    // Stream Deck calls this global when the property inspector opens.
+    function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+      const action = JSON.parse(actionInfo);
+      let settings = action.payload?.settings ?? {};
+      const select = document.getElementById("matter");
+      const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+      const send = (event, payload) => ws.send(JSON.stringify({ event, context: uuid, action: action.action, payload }));
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ event: registerEvent, uuid }));
+        send("sendToPlugin", { event: "getMatters" }); // the plugin asks the deck-time app for the list
+      };
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.event === "sendToPropertyInspector" && msg.payload?.event === "getMatters") {
+          const items = msg.payload.items ?? [];
+          select.innerHTML = '<option value="">Choose a matter</option>' +
+            items.map((i) => `<option value="${String(i.value).replace(/"/g, "&quot;")}" ${i.disabled ? "disabled" : ""}>${String(i.label).replace(/</g, "&lt;")}</option>`).join("");
+          select.value = settings.matterId ?? "";
+        }
+        if (msg.event === "didReceiveSettings") {
+          settings = msg.payload?.settings ?? {};
+          select.value = settings.matterId ?? "";
+        }
+      };
+      select.addEventListener("change", () => {
+        settings = { ...settings, matterId: select.value };
+        send("setSettings", settings);
+      });
+    }
+  </script>
 </body>
 </html>

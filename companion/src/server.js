@@ -4,20 +4,36 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { aiStatus, draftNarrative, normalizeSplit, proposeSplit, suggestCodes } from './ai.js';
 import { codesFor } from './codes.js';
-import { Dictation } from './dictation.js';
-import { DB_PATH, EXPORT_DIR, loadConfig, saveConfig, deepMerge } from './config.js';
+import { EXPORT_DIR, deepMerge } from './config.js';
 import { exportable, learnFromTim, toCsv, toTim, validateForTim } from './export.js';
-import { Store, httpError } from './store.js';
+import { httpError } from './store.js';
 import { isDate, localDate } from './time.js';
 
-const PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+const DEFAULT_PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
-export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, exportDir = EXPORT_DIR, dictation = null }) {
+export function createServer({
+  store,
+  getConfig,
+  setConfig,
+  fetchImpl = fetch,
+  exportDir = EXPORT_DIR,
+  dictation = null,
+  publicDir = DEFAULT_PUBLIC_DIR,
+  workspace = null, // { get(), set(name), resetDemo() } when real/demo switching is available
+}) {
   const clients = new Set();
   store.on('change', () => broadcast());
   dictation?.on('change', () => broadcast());
-  const fullState = () => ({ ...store.state(), dictation: dictation?.snapshot() ?? null });
+  const fullState = () => ({
+    ...store.state(),
+    dictation: dictation?.snapshot() ?? null,
+    workspace: workspace?.get() ?? 'real',
+  });
+  const aiOn = () => getConfig().features?.ai !== false;
+  const requireAi = () => {
+    if (!aiOn()) throw httpError(403, 'AI drafting is turned off in this edition. Write the narrative directly.');
+  };
   // Tick so running timers refresh even with no changes.
   const ticker = setInterval(() => clients.size && broadcast(), 1000);
 
@@ -55,6 +71,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
     ['DELETE', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/(\d+)$/, (_, __, [date, id, part]) => store.deletePart(date, +id, +part)],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/parts$/, (b, _, [date, id]) => store.addPart(date, +id, b)],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/narrate$/, async (_, __, [date, id, part]) => {
+      requireAi();
       const matterId = +id;
       const p = +(part ?? 0);
       const matter = store.getMatter(matterId);
@@ -81,6 +98,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
       }
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/codes$/, async (_, __, [date, id, part]) => {
+      requireAi();
       const matterId = +id;
       const p = +(part ?? 0);
       const codes = codesFor(store.getMatter(matterId), getConfig());
@@ -113,7 +131,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
         for (const b of sized) {
           const notes = b.notes.map((n) => n.text).join('; ');
           const item = { notes, narrative: '', hours: b.hours, task: b.task, range: [b.start, b.end] };
-          if (notes) {
+          if (notes && aiOn()) {
             item.narrative = await draftNarrative({ config, matter, notes, hours: b.hours, recent: store.recentNarratives(matterId), rules, fetchImpl });
             if (codes) Object.assign(item, await suggestCodes({ config, narrative: item.narrative, codes, fetchImpl }).catch(() => ({})));
           }
@@ -122,6 +140,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
         return { mode: 'tasks', total_hours: total, entries };
       }
 
+      if (!aiOn()) throw httpError(400, 'Mark each task with Next task while you work to split exactly, or use Add split.');
       const proposal = await proposeSplit({
         config,
         matter,
@@ -136,6 +155,16 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
       return { mode: 'ai', total_hours: totalHours, entries: proposal };
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
+    ['GET', /^\/api\/workspace$/, () => ({ workspace: workspace?.get() ?? 'real', available: !!workspace })],
+    ['POST', /^\/api\/workspace$/, (b) => {
+      if (!workspace) throw httpError(501, 'Demo day is not available here');
+      store.stop(); // don't leave a timer running in the workspace you're leaving
+      return workspace.set(b.workspace);
+    }],
+    ['POST', /^\/api\/workspace\/reset-demo$/, () => {
+      if (!workspace) throw httpError(501, 'Demo day is not available here');
+      return workspace.resetDemo();
+    }],
     ['GET', /^\/api\/deck$/, () => store.deck()],
     ['PUT', /^\/api\/deck\/(\d+)$/, (b, _, [slot]) => store.setDeckSlot(+slot, b)],
     ['POST', /^\/api\/deck\/swap$/, (b) => store.swapDeckSlots(+b.from, +b.to)],
@@ -183,7 +212,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
     try {
-      if (!url.pathname.startsWith('/api/')) return serveStatic(url.pathname, res);
+      if (!url.pathname.startsWith('/api/')) return serveStatic(publicDir, url.pathname, res);
       guardOrigin(req);
 
       if (req.method === 'GET' && url.pathname === '/api/events') {
@@ -253,36 +282,12 @@ function send(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-function serveStatic(pathname, res) {
-  const file = path.normalize(path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname));
-  if (!file.startsWith(PUBLIC_DIR) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+function serveStatic(publicDir, pathname, res) {
+  const root = path.resolve(publicDir);
+  const file = path.normalize(path.join(root, pathname === '/' ? 'index.html' : pathname));
+  if (!file.startsWith(root + path.sep) && file !== root || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
     return send(res, 404, { error: 'Not found' });
   }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);
-}
-
-// ---------- entry point ----------
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  let config = loadConfig();
-  const store = new Store(DB_PATH, () => config);
-  const dictation = new Dictation({ getConfig: () => config, onText: (text, ctx) => store.addNote(text, ctx.matterId, 'dictated', ctx.startedAt) });
-  const server = createServer({
-    store,
-    dictation,
-    getConfig: () => config,
-    setConfig: (next) => (config = saveConfig(next)),
-  });
-  server.listen(config.port, '127.0.0.1', () => {
-    console.log(`deck-time running at http://127.0.0.1:${config.port}`);
-    console.log(`data: ${DB_PATH}`);
-  });
-  const shutdown = () => {
-    server.close();
-    store.close();
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
 }

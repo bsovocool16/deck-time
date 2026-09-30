@@ -21,3 +21,5 @@ models/
 
 # Built demo page
 demo/build/
+plugin/com.bsovocool.decktime.sdPlugin/app/
+plugin/sim-out/

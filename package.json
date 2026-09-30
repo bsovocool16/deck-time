@@ -8,11 +8,11 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning companion/src/server.js",
-    "dev": "node --disable-warning=ExperimentalWarning --watch companion/src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning companion/src/main.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch companion/src/main.js",
     "test": "node --disable-warning=ExperimentalWarning --test companion/test/*.test.js",
     "tim:inspect": "node scripts/tim-inspect.js",
-    "demo": "node --disable-warning=ExperimentalWarning scripts/seed-demo.js && DECK_TIME_HOME=./data/demo node --disable-warning=ExperimentalWarning --watch-path=companion/src companion/src/server.js",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/seed-demo.js && DECK_TIME_HOME=./data/demo node --disable-warning=ExperimentalWarning --watch-path=companion/src companion/src/main.js",
     "tim:learn": "node --disable-warning=ExperimentalWarning scripts/tim-inspect.js --apply",
     "build:demo": "node scripts/build-demo.js"
   },

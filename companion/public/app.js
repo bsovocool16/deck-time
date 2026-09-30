@@ -71,6 +71,9 @@ function connect() {
     renderRunning();
     renderDeck();
     renderSidebar();
+    const demo = state.workspace === 'demo';
+    $('#demo-banner').hidden = !demo;
+    $('#demo-toggle').checked = demo;
     // Refresh entries when something structural changes, or once a minute for hours.
     const sig = [state.running?.id, state.matters.map((m) => m.id + m.name + m.label + m.color).join(), Math.floor(state.now / 60000)].join('|');
     if (sig !== lastSignature) {
@@ -173,6 +176,25 @@ async function placeOnKey(slot, item) {
 }
 
 $('#deck-search').addEventListener('input', () => renderSidebar(true));
+
+// ---------- demo day ----------
+
+async function setWorkspace(workspace) {
+  await api('/api/workspace', { method: 'POST', body: { workspace } });
+  toast(workspace === 'demo' ? 'Showing demo matters' : 'Back to your matters');
+  refreshDay(true);
+  if (!$('[data-panel="matters"]').classList.contains('hidden')) renderMatters();
+}
+$('#demo-toggle').addEventListener('change', guard((ev) => setWorkspace(ev.target.checked ? 'demo' : 'real')));
+$('#leave-demo').addEventListener('click', guard(() => setWorkspace('real')));
+$('#reset-demo').addEventListener('click', guard(async () => {
+  await api('/api/workspace/reset-demo', { method: 'POST', body: {} });
+  toast('Demo day reset');
+  refreshDay(true);
+}));
+api('/api/workspace')
+  .then((w) => ($('#workspace-settings').hidden = !w.available))
+  .catch(() => {});
 
 // Drag and drop: sidebar items and keys can be dropped on keys; keys dropped on the sidebar are cleared.
 document.addEventListener('dragstart', (ev) => {
@@ -749,7 +771,12 @@ document.addEventListener('keydown', guard(async (ev) => {
 
 $('#day').value = day;
 api('/api/config')
-  .then((c) => (config = c))
+  .then((c) => {
+    config = c;
+    // Editions without a local model or recorder hide those controls.
+    document.body.classList.toggle('no-ai', c.features?.ai === false);
+    document.body.classList.toggle('no-dictation', c.features?.dictation === false);
+  })
   .catch(() => {})
   .finally(() => {
     fillCodeSetOptions();

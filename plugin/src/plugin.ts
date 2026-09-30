@@ -6,6 +6,7 @@ import { MatterTimer } from "./actions/matter-timer";
 import { NextTask } from "./actions/next-task";
 import { Review } from "./actions/review";
 import { StopTimer } from "./actions/stop-timer";
+import { startEmbeddedCompanion } from "./office";
 
 streamDeck.logger.setLevel("info");
 
@@ -18,3 +19,4 @@ streamDeck.actions.registerAction(new Dictate());
 streamDeck.actions.registerAction(new Infobar());
 
 streamDeck.connect();
+void startEmbeddedCompanion();

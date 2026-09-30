@@ -17,11 +17,14 @@
     {
       "Platform": "mac",
       "MinimumVersion": "12"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
     }
   ],
   "Nodejs": {
-    "Version": "24",
-    "Debug": "enabled"
+    "Version": "24"
   },
   "Actions": [
     {
