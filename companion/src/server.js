@@ -35,7 +35,7 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
       const running = store.running();
       if (!running) throw httpError(400, 'Start a timer first; dictation goes into its notes');
       const matter = store.getMatter(running.matter_id);
-      dictation.start({ matterId: matter.id, prompt: `Legal billing notes for ${matter.name}.` });
+      dictation.start({ matterId: matter.id, prompt: `Legal billing notes for ${matter.name}.`, startedAt: store.now() });
       return { recording: true };
     }],
     ['GET', /^\/api\/matters$/, (_, q) => store.listMatters({ includeArchived: q.get('all') === '1' })],
@@ -264,7 +264,7 @@ function serveStatic(pathname, res) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   let config = loadConfig();
   const store = new Store(DB_PATH, () => config);
-  const dictation = new Dictation({ getConfig: () => config, onText: (text, ctx) => store.addNote(text, ctx.matterId, 'dictated') });
+  const dictation = new Dictation({ getConfig: () => config, onText: (text, ctx) => store.addNote(text, ctx.matterId, 'dictated', ctx.startedAt) });
   const server = createServer({
     store,
     dictation,

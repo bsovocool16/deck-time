@@ -204,8 +204,8 @@ function proposalPanel(matterId, matter) {
       .map(
         (e, i) => `<div class="split-row" data-i="${i}">
         <input type="number" step="0.1" min="0.1" name="hours" value="${Number(e.hours).toFixed(1)}">
-        <div class="split-text">${e.range ? `<small>${hhmm(e.range[0])}–${hhmm(e.range[1])}${e.notes ? ` · ${esc(e.notes)}` : ' · no notes: write this one'}</small>` : ''}<textarea name="narrative" rows="2" placeholder="Narrative">${esc(e.narrative)}</textarea></div>
-        ${set ? `<select name="task_code">${codeOptions(set.codes, e.task_code, '')}</select><select name="activity_code">${codeOptions(config.codes.activities, e.activity_code, '')}</select>` : ''}
+        <div class="split-text">${e.range ? `<small>${hhmm(e.range[0])}–${hhmm(e.range[1])}${e.notes ? ` · ${esc(e.notes)}` : ' · no notes: write this one'}</small>` : ''}<textarea name="narrative" rows="3" placeholder="Narrative">${esc(e.narrative)}</textarea></div>
+        ${set ? `<div class="split-codes"><select name="task_code" aria-label="Task code">${codeOptions(set.codes, e.task_code, '')}</select><select name="activity_code" aria-label="Activity code">${codeOptions(config.codes.activities, e.activity_code, '')}</select></div>` : ''}
         <button class="icon danger" data-action="drop-row" title="Remove row">Remove</button>
       </div>`,
       )

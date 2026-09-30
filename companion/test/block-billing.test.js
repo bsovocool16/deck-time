@@ -283,8 +283,8 @@ test('switching away and back continues the same task', () => {
   clock.advance(10 * MIN);
   store.nextTask();
   clock.advance(5 * MIN);
-  store.toggle(b.id); // interruption on another matter
-  clock.advance(20 * MIN);
+  store.toggle(b.id); // short interruption on another matter
+  clock.advance(10 * MIN);
   store.toggle(a.id); // back to A: still task 1
   clock.advance(5 * MIN);
   store.stop();
@@ -358,4 +358,29 @@ test('applying a split whose total exceeds the timer pins the main entry', () =>
   ]);
   assert.deepEqual(rows.map((e) => e.hours), [0.1, 0.1, 0.1]);
   assert.equal(rows[0].over_allocated, false);
+});
+
+test('coming back to a matter after a long gap starts a new task', () => {
+  const { store, clock } = setup();
+  const a = store.createMatter({ name: 'A' });
+  timeOn(store, clock, a.id, 30); // morning: task 0
+  clock.advance(3 * 60 * MIN); // afternoon
+  timeOn(store, clock, a.id, 20); // new work: task 1
+  clock.advance(5 * MIN);
+  timeOn(store, clock, a.id, 10); // back after 5 minutes: still task 1
+  assert.deepEqual(store.taskBlocks(DATE, a.id).map((x) => [x.task, x.ms / MIN]), [[0, 30], [1, 30]]);
+});
+
+test('a dictated note belongs to the task it was spoken in, even if transcribed after Next task', () => {
+  const { store, clock } = setup();
+  const m = store.createMatter({ name: 'A' });
+  store.toggle(m.id);
+  const spokeAt = clock.now();
+  clock.advance(10 * MIN);
+  store.nextTask(); // pressed while transcription was still running
+  clock.advance(MIN);
+  store.addNote('reviewed disclosure schedules', m.id, 'dictated', spokeAt);
+  clock.advance(5 * MIN);
+  store.stop();
+  assert.deepEqual(store.taskBlocks(DATE, m.id).map((b) => b.notes.map((n) => n.text)), [['reviewed disclosure schedules'], []]);
 });

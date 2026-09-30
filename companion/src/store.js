@@ -85,6 +85,9 @@ const MIGRATIONS = [
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
+// Restarting a matter within this long of its last stop continues the same task.
+export const RESUME_WINDOW_MS = 15 * 60_000;
+
 export class Store extends EventEmitter {
   constructor(dbPath, getConfig, now = () => Date.now()) {
     super();
@@ -224,8 +227,7 @@ export class Store extends EventEmitter {
       if (current) this.db.prepare('UPDATE segments SET end_ms = ? WHERE id = ?').run(now, current.id);
       if (!current || current.matter_id !== matterId) {
         if (matter.archived) throw httpError(400, 'Matter is archived');
-        // Returning to a matter continues its current task; only "Next task" starts a new one.
-        this.db.prepare('INSERT INTO segments (matter_id, start_ms, task) VALUES (?, ?, ?)').run(matterId, now, this.#currentTask(matterId, now));
+        this.db.prepare('INSERT INTO segments (matter_id, start_ms, task) VALUES (?, ?, ?)').run(matterId, now, this.#resumeTask(matterId, now));
       }
       this.db.exec('COMMIT');
     } catch (e) {
@@ -240,6 +242,20 @@ export class Store extends EventEmitter {
     const [start] = dayBounds(localDate(at));
     const row = this.db.prepare('SELECT MAX(task) AS t FROM segments WHERE matter_id = ? AND start_ms >= ?').get(matterId, start);
     return row?.t ?? 0;
+  }
+
+  /**
+   * Task number for restarting a matter's timer. Coming back within a short
+   * interruption (a call on another matter) continues the same task; after a
+   * longer gap it's new work, so it starts a new task.
+   */
+  #resumeTask(matterId, at) {
+    const [start] = dayBounds(localDate(at));
+    const last = this.db
+      .prepare('SELECT task, end_ms FROM segments WHERE matter_id = ? AND start_ms >= ? AND end_ms IS NOT NULL ORDER BY end_ms DESC LIMIT 1')
+      .get(matterId, start);
+    if (!last) return this.#currentTask(matterId, at);
+    return at - last.end_ms <= RESUME_WINDOW_MS ? last.task : this.#currentTask(matterId, at) + 1;
   }
 
   /** Mark a task boundary on the running timer: close the current task and start the next on the same matter. */
@@ -316,14 +332,14 @@ export class Store extends EventEmitter {
   }
 
   /** Append a note to today's main entry for the running matter (or a given one), and log it with a timestamp. */
-  addNote(text, matterId, source = 'typed') {
+  /** ts: when the note was taken; for dictation, when speaking started (not when transcription finished). */
+  addNote(text, matterId, source = 'typed', ts = this.now()) {
     const id = matterId ?? this.running()?.matter_id;
     if (!id) throw httpError(400, 'No timer running');
     const clean = text.trim();
     if (!clean) throw httpError(400, 'Note is empty');
-    const now = this.now();
-    const date = localDate(now);
-    this.db.prepare('INSERT INTO note_events (date, matter_id, ts, text, source) VALUES (?, ?, ?, ?, ?)').run(date, id, now, clean, source);
+    const date = localDate(ts);
+    this.db.prepare('INSERT INTO note_events (date, matter_id, ts, text, source) VALUES (?, ?, ?, ?, ?)').run(date, id, ts, clean, source);
     const entry = this.getEntry(date, id);
     const notes = entry.notes ? `${entry.notes}; ${clean}` : clean;
     return this.updateEntry(date, id, { notes });

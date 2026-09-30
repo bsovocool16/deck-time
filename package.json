@@ -13,7 +13,8 @@
     "test": "node --disable-warning=ExperimentalWarning --test companion/test/*.test.js",
     "tim:inspect": "node scripts/tim-inspect.js",
     "demo": "node --disable-warning=ExperimentalWarning scripts/seed-demo.js && DECK_TIME_HOME=./data/demo node --disable-warning=ExperimentalWarning --watch-path=companion/src companion/src/server.js",
-    "tim:learn": "node --disable-warning=ExperimentalWarning scripts/tim-inspect.js --apply"
+    "tim:learn": "node --disable-warning=ExperimentalWarning scripts/tim-inspect.js --apply",
+    "build:demo": "node scripts/build-demo.js"
   },
   "license": "MIT"
 }

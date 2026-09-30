@@ -18,3 +18,6 @@ plugin/*.streamDeckPlugin
 
 # Large local models (Whisper, Ollama) — stored on this disk, never committed
 models/
+
+# Built demo page
+demo/build/

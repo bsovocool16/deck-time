@@ -249,7 +249,8 @@ button.icon { height: 24px; padding: 0 6px; border-color: transparent; color: va
 .split-head small { color: var(--muted); }
 .split-head .bad { color: var(--danger); }
 .split-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
-.split-row:has(select) { grid-template-columns: 64px minmax(0, 1fr) 160px 160px auto; }
+.split-row:has(.split-codes) { grid-template-columns: 64px minmax(0, 1fr) 210px auto; }
+.split-codes { display: grid; gap: 6px; padding-top: 18px; }
 .split-row > input[name="hours"] { text-align: right; font-weight: 600; }
 .split-text { display: grid; gap: 4px; }
 .split-text small { color: var(--muted); }
@@ -323,14 +324,16 @@ label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap;
   .note-form input { width: 100%; }
   .deck { grid-template-columns: repeat(4, minmax(0, 84px)); }
   .key { width: auto; height: auto; aspect-ratio: 1; }
-  .note-form { min-width: 0; flex-wrap: wrap; }
+  .note-form { flex: 1 1 100%; min-width: 0; flex-wrap: wrap; }
+  #segments, #matters-table { display: block; overflow-x: auto; white-space: nowrap; }
   .note-form input { flex-basis: 100%; }
   .entry, .entry .codes { grid-template-columns: 1fr; }
   .entry { padding: 14px 16px; }
   .entry-head { flex-wrap: wrap; }
   .day-actions { margin-left: 0; }
   .grid-form { grid-template-columns: 1fr 1fr; }
-  .split-row, .split-row:has(select) { grid-template-columns: 1fr; }
+  .split-row, .split-row:has(.split-codes) { grid-template-columns: 1fr; }
+  .split-codes { padding-top: 0; }
   .client-card { grid-template-columns: 1fr; }
   .client-head input[name="name"], .client-head label.check, .client-card textarea, .client-foot { grid-column: 1; }
   .entry.part, .split-panel { margin-left: 12px; }
