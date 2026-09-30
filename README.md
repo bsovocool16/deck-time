@@ -175,3 +175,11 @@ companion/public/  review UI (vanilla JS), includes a clickable virtual deck
 plugin/            Stream Deck plugin (TypeScript, @elgato/streamdeck v3)
 scripts/           tim-inspect.js, seed-demo.js
 ```
+
+## License
+
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Free to use, modify and share
+for noncommercial purposes, including personal use and use by noncommercial
+organizations. Commercial use needs separate permission from the author.
+
+Required Notice: Copyright 2026 Benjamin Sovocool (https://github.com/bsovocool16)

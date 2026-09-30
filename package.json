@@ -16,5 +16,5 @@
     "tim:learn": "node --disable-warning=ExperimentalWarning scripts/tim-inspect.js --apply",
     "build:demo": "node scripts/build-demo.js"
   },
-  "license": "MIT"
+  "license": "PolyForm-Noncommercial-1.0.0"
 }

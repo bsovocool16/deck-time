@@ -23,5 +23,6 @@
     "rollup": "^4.0.2",
     "tslib": "^2.6.2",
     "typescript": "^5.9.0"
-  }
+  },
+  "license": "PolyForm-Noncommercial-1.0.0"
 }
