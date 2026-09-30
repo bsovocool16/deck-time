@@ -1,5 +1,4 @@
 const $ = (sel, root = document) => root.querySelector(sel);
-const DECK_KEYS = 8; // Stream Deck Neo
 
 let state = null;
 let config = null;
@@ -71,6 +70,7 @@ function connect() {
     state = JSON.parse(ev.data);
     renderRunning();
     renderDeck();
+    renderSidebar();
     // Refresh entries when something structural changes, or once a minute for hours.
     const sig = [state.running?.id, state.matters.map((m) => m.id + m.name + m.label + m.color).join(), Math.floor(state.now / 60000)].join('|');
     if (sig !== lastSignature) {
@@ -105,21 +105,137 @@ function renderRunning() {
   document.title = r ? `${clock(state.now - r.start_ms)} · ${r.matter.label || r.matter.name}` : 'deck-time';
 }
 
+// ---------- Stream Deck keys + sidebar ----------
+
+const FUNCTION_KEYS = { dictate: 'Dictate', 'next-task': 'Next task', stop: 'Stop', review: 'Review' };
+let dragging = false;
+let placing = null; // { kind, matter_id } picked in the sidebar, waiting for a key click
+
 function renderDeck() {
-  const keys = state.matters.slice(0, DECK_KEYS).map((m) => {
-    const live = state.running?.matter_id === m.id;
-    const ms = live ? state.now - state.running.start_ms : m.today_ms;
-    return `<button class="key ${live ? 'live' : ''}" style="--key-color:${esc(m.color)}" data-toggle="${m.id}" title="${esc(m.name)}">
-      <span>${esc(m.label || m.name)}</span>
-      <span class="key-time">${live ? clock(ms) : ms ? clock(ms) : ''}</span>
-      <span class="bar"></span>
-    </button>`;
-  });
-  while (keys.length < DECK_KEYS) keys.push('<div class="key empty"></div>');
-  $('#deck').innerHTML = keys.join('');
-  if (!state.matters.length) {
-    $('#deck').firstElementChild.outerHTML = '<button class="key empty" data-goto="matters">Add a matter</button>';
+  if (dragging || !state.deck) return;
+  const byId = Object.fromEntries(state.matters.map((m) => [m.id, m]));
+  const run = state.running;
+  $('#deck').innerHTML = state.deck
+    .map((s) => {
+      const at = `data-slot="${s.slot}" aria-label="Key ${s.slot + 1}`;
+      const m = s.kind === 'matter' ? byId[s.matter_id] : null;
+      if (m) {
+        const live = run?.matter_id === m.id;
+        const ms = live ? state.now - run.start_ms : m.today_ms;
+        return `<button class="key ${live ? 'live' : ''}" style="--key-color:${esc(m.color)}" ${at}: ${esc(m.name)}" draggable="true" data-toggle="${m.id}" title="${esc(m.name)}. Click to ${live ? 'stop' : 'start'}; drag to move.">
+          <span>${esc(m.label || m.name)}</span><span class="key-time">${ms ? clock(ms) : ''}</span><span class="bar"></span></button>`;
+      }
+      if (FUNCTION_KEYS[s.kind]) {
+        let sub = '';
+        let cls = '';
+        if (s.kind === 'dictate' && state.dictation?.status === 'recording') [sub, cls] = [clock(state.now - state.dictation.started_at), 'recording'];
+        else if (s.kind === 'dictate' && state.dictation?.status === 'transcribing') sub = 'Writing…';
+        else if (s.kind === 'next-task' && run) sub = `Task ${run.tasks_today}`;
+        else if (s.kind === 'stop') sub = `${state.total_hours.toFixed(1)}h`;
+        const idle = (s.kind === 'dictate' || s.kind === 'next-task' || s.kind === 'stop') && !run && !cls;
+        return `<button class="key fn ${cls} ${idle ? 'idle' : ''}" ${at}: ${FUNCTION_KEYS[s.kind]}" draggable="true" data-fn="${s.kind}" title="${FUNCTION_KEYS[s.kind]}. Drag to move.">
+          <span>${FUNCTION_KEYS[s.kind]}</span><span class="key-time">${sub}</span></button>`;
+      }
+      return `<button class="key empty" ${at}: empty" title="Drop a matter here"></button>`;
+    })
+    .join('');
+  $('#deck').classList.toggle('placing', !!placing);
+}
+
+let sidebarSig = '';
+function renderSidebar(force = false) {
+  if (!state?.deck) return;
+  const q = $('#deck-search').value.trim().toLowerCase();
+  const sig = JSON.stringify([state.matters.map((m) => [m.id, m.name, m.label, m.color]), state.deck.map((s) => s.kind + s.matter_id), placing, q]);
+  if (!force && (sig === sidebarSig || $('#deck-list').contains(document.activeElement))) return;
+  sidebarSig = sig;
+  const slotOf = Object.fromEntries(state.deck.filter((s) => s.kind === 'matter').map((s) => [s.matter_id, s.slot]));
+  const list = state.matters.filter((m) => !q || `${m.name} ${m.label} ${m.client_no} ${m.matter_no}`.toLowerCase().includes(q));
+  $('#deck-list').innerHTML = state.matters.length
+    ? list
+        .map((m) => {
+          const slot = slotOf[m.id];
+          const picked = placing?.kind === 'matter' && placing.matter_id === m.id;
+          return `<div class="deck-item ${slot != null ? 'on' : ''} ${picked ? 'picked' : ''}" draggable="true" data-kind="matter" data-matter="${m.id}" title="Drag onto a key, or click then click a key">
+            <span class="swatch" style="background:${esc(m.color)}"></span>
+            <span class="item-name">${esc(m.name)}</span>
+            <input class="item-label" data-label="${m.id}" value="${esc(m.label)}" maxlength="14" aria-label="Key label for ${esc(m.name)}" title="Key label (up to 14 characters)">
+            <span class="slot-no">${slot != null ? `Key ${slot + 1}` : ''}</span>
+          </div>`;
+        })
+        .join('') || '<div class="deck-none">No matching matters</div>'
+    : '<div class="deck-none">No matters yet. <button class="link" data-goto="matters">Add one</button></div>';
+  document.querySelectorAll('.deck-fns [data-kind]').forEach((el) => el.classList.toggle('picked', placing?.kind === el.dataset.kind));
+}
+
+async function placeOnKey(slot, item) {
+  await api(`/api/deck/${slot}`, { method: 'PUT', body: item });
+}
+
+$('#deck-search').addEventListener('input', () => renderSidebar(true));
+
+// Drag and drop: sidebar items and keys can be dropped on keys; keys dropped on the sidebar are cleared.
+document.addEventListener('dragstart', (ev) => {
+  const key = ev.target.closest?.('[data-slot][draggable="true"]');
+  const item = ev.target.closest?.('.deck-item, .deck-fns [data-kind]');
+  if (!key && !item) return;
+  if (ev.target.closest('input')) return ev.preventDefault();
+  const payload = key
+    ? { from: +key.dataset.slot }
+    : { kind: item.dataset.kind, matter_id: item.dataset.matter ? +item.dataset.matter : null };
+  ev.dataTransfer.setData('application/x-deck', JSON.stringify(payload));
+  ev.dataTransfer.effectAllowed = 'move';
+  dragging = true;
+  document.body.classList.add('deck-dragging');
+});
+document.addEventListener('dragover', (ev) => {
+  const target = ev.target.closest?.('[data-slot], #deck-sidebar');
+  if (!target || !ev.dataTransfer.types.includes('application/x-deck')) return;
+  ev.preventDefault();
+  document.querySelectorAll('.drop-hover').forEach((el) => el !== target && el.classList.remove('drop-hover'));
+  target.classList.add('drop-hover');
+});
+document.addEventListener('dragleave', (ev) => {
+  const target = ev.target.closest?.('[data-slot], #deck-sidebar');
+  if (target && !target.contains(ev.relatedTarget)) target.classList.remove('drop-hover');
+});
+document.addEventListener('drop', guard(async (ev) => {
+  const raw = ev.dataTransfer.getData('application/x-deck');
+  const target = ev.target.closest?.('[data-slot], #deck-sidebar');
+  if (!raw || !target) return;
+  ev.preventDefault();
+  const data = JSON.parse(raw);
+  // Clean up here too: if the dragged row was redrawn, dragend never reaches the document.
+  dragging = false;
+  document.body.classList.remove('deck-dragging');
+  document.querySelectorAll('.drop-hover').forEach((el) => el.classList.remove('drop-hover'));
+  if (target.id === 'deck-sidebar') {
+    if (data.from != null) await placeOnKey(data.from, { kind: 'empty' });
+  } else if (data.from != null) {
+    if (data.from !== +target.dataset.slot) await api('/api/deck/swap', { method: 'POST', body: { from: data.from, to: +target.dataset.slot } });
+  } else {
+    await placeOnKey(+target.dataset.slot, data);
   }
+}));
+document.addEventListener('dragend', () => {
+  dragging = false;
+  document.body.classList.remove('deck-dragging');
+  document.querySelectorAll('.drop-hover').forEach((el) => el.classList.remove('drop-hover'));
+  renderDeck();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && placing) {
+    placing = null;
+    renderDeck();
+    renderSidebar(true);
+  }
+});
+
+async function runFunctionKey(fn) {
+  if (fn === 'dictate') return api('/api/dictation/toggle', { method: 'POST', body: {} });
+  if (fn === 'next-task') return api('/api/timer/next-task', { method: 'POST', body: { label: '' } });
+  if (fn === 'stop') return api('/api/timer/stop', { method: 'POST', body: {} });
+  if (fn === 'review') return $('#entries').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ---------- day / entries ----------
@@ -363,12 +479,33 @@ function showTab(name) {
   if (name === 'settings') renderSettings();
 }
 
+document.addEventListener('click', (ev) => {
+  const row = ev.target.closest('.deck-item');
+  if (!row || ev.target.closest('input, button')) return;
+  const id = +row.dataset.matter;
+  placing = placing?.matter_id === id ? null : { kind: 'matter', matter_id: id };
+  renderDeck();
+  renderSidebar(true);
+});
+
 document.addEventListener('click', guard(async (ev) => {
   const t = ev.target.closest('button');
   if (!t) return;
   if (t.dataset.tab) return showTab(t.dataset.tab);
   if (t.dataset.goto) return showTab(t.dataset.goto);
+  if (placing && t.dataset.slot != null) {
+    const item = placing;
+    placing = null;
+    await placeOnKey(+t.dataset.slot, item);
+    return renderSidebar(true);
+  }
   if (t.dataset.toggle) return api('/api/timer/toggle', { method: 'POST', body: { matter_id: +t.dataset.toggle } });
+  if (t.dataset.fn) return runFunctionKey(t.dataset.fn);
+  if (t.closest('.deck-fns') && t.dataset.kind) {
+    placing = placing?.kind === t.dataset.kind ? null : { kind: t.dataset.kind };
+    renderDeck();
+    return renderSidebar(true);
+  }
 
   const entry = t.closest('.entry');
   if (entry && t.dataset.action === 'draft') {
@@ -468,6 +605,10 @@ function readProposal(panel) {
 
 document.addEventListener('change', guard(async (ev) => {
   const el = ev.target;
+  if (el.dataset.label) {
+    await api(`/api/matters/${el.dataset.label}`, { method: 'PATCH', body: { label: el.value.trim() } });
+    return toast('Key label saved');
+  }
   const panel = el.closest('[data-proposal]');
   if (panel) {
     readProposal(panel);
@@ -597,12 +738,13 @@ $('#settings-form').addEventListener('submit', guard(async (ev) => {
   renderSettings();
 }));
 
-// Keyboard: 1–8 toggles deck keys (when not typing).
+// Keyboard: 1–8 press the matching key (when not typing).
 document.addEventListener('keydown', guard(async (ev) => {
   if (ev.target.closest('input, textarea, select') || ev.metaKey || ev.ctrlKey) return;
-  const n = Number(ev.key);
-  const m = state?.matters[n - 1];
-  if (n >= 1 && n <= DECK_KEYS && m) await api('/api/timer/toggle', { method: 'POST', body: { matter_id: m.id } });
+  const s = state?.deck?.[Number(ev.key) - 1];
+  if (!s || !/^[1-9]$/.test(ev.key)) return;
+  if (s.kind === 'matter') await api('/api/timer/toggle', { method: 'POST', body: { matter_id: s.matter_id } });
+  else if (FUNCTION_KEYS[s.kind]) await runFunctionKey(s.kind);
 }));
 
 $('#day').value = day;

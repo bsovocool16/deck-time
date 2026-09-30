@@ -41,21 +41,25 @@
   });
   const lastSrc = new Array(8).fill('');
 
+  // Same drawing rules as the plugin's "deck-time Key" action.
   function paint(state) {
-    const order = demo.deckOrder();
     const run = state.running;
-    order.forEach((m, i) => {
-      const live = run?.matter_id === m.id;
-      const today = state.matters.find((x) => x.id === m.id)?.today_ms ?? 0;
-      setKey(i, R.matterKey({ label: m.label || m.name, color: m.color, live, elapsedMs: live ? state.now - run.start_ms : 0, todayMs: today }), `${m.name}: ${live ? 'running, press to stop' : 'press to start'}`, { matter: m.id });
-    });
-    for (let i = order.length; i < 5; i++) setKey(i, R.messageKey(''), 'Empty key', {});
     const d = state.dictation;
-    const dict =
-      d.status === 'recording' ? R.dictateKey('recording', state.now - d.started_at) : d.status === 'transcribing' ? R.dictateKey('transcribing') : R.dictateKey(run ? 'idle' : 'disabled');
-    setKey(5, dict, 'Dictate: hold to talk, or tap to start and stop', { action: 'dictate' });
-    setKey(6, R.nextTaskKey(run ? { active: true, task: run.tasks_today, elapsedMs: state.now - run.start_ms, color: run.matter.color } : { active: false }), 'Next task', { action: 'next' });
-    setKey(7, R.stopKey(!!run, state.total_hours), 'Stop timer', { action: 'stop' });
+    state.deck.forEach((s, i) => {
+      const m = s.kind === 'matter' ? state.matters.find((x) => x.id === s.matter_id) : null;
+      if (m) {
+        const live = run?.matter_id === m.id;
+        return setKey(i, R.matterKey({ label: m.label || m.name, color: m.color, live, elapsedMs: live ? state.now - run.start_ms : 0, todayMs: m.today_ms }), `Key ${i + 1}: ${m.name}, ${live ? 'running, press to stop' : 'press to start'}`, { matter: m.id, kind: 'matter' });
+      }
+      if (s.kind === 'dictate') {
+        const img = d.status === 'recording' ? R.dictateKey('recording', state.now - d.started_at) : d.status === 'transcribing' ? R.dictateKey('transcribing') : R.dictateKey(run ? 'idle' : 'disabled');
+        return setKey(i, img, `Key ${i + 1}: Dictate, hold to talk or tap to start and stop`, { kind: 'dictate' });
+      }
+      if (s.kind === 'next-task') return setKey(i, R.nextTaskKey(run ? { active: true, task: run.tasks_today, elapsedMs: state.now - run.start_ms, color: run.matter.color } : { active: false }), `Key ${i + 1}: Next task`, { kind: 'next-task' });
+      if (s.kind === 'stop') return setKey(i, R.stopKey(!!run, state.total_hours), `Key ${i + 1}: Stop`, { kind: 'stop' });
+      if (s.kind === 'review') return setKey(i, R.reviewKey(), `Key ${i + 1}: Review`, { kind: 'review' });
+      setKey(i, R.messageKey('Empty', 'drop a matter'), `Key ${i + 1}: empty`, { kind: 'empty' });
+    });
 
     barTitle.textContent = run ? run.matter.label || run.matter.name : 'No timer running';
     barValue.textContent = run ? R.clock(state.now - run.start_ms) : `${state.total_hours.toFixed(1)}h today`;
@@ -69,20 +73,26 @@
       lastSrc[i] = src;
     }
     b.setAttribute('aria-label', label);
+    b.dataset.slot = i; // drop target for the app's sidebar
     b.dataset.matter = data.matter ?? '';
-    b.dataset.action = data.action ?? '';
+    b.dataset.action = data.kind ?? '';
   }
+
+  // While the app's sidebar is placing a matter, a key click assigns instead of pressing.
+  const placingNow = () => document.querySelector('#deck')?.classList.contains('placing');
+  new MutationObserver(() => $('#neo').classList.toggle('placing', placingNow())).observe($('#deck'), { attributes: true, attributeFilter: ['class'] });
 
   // Dictate supports hold-to-talk like the plugin; everything else is a tap.
   let pressAt = 0;
   let startedThisPress = false;
   keysEl.addEventListener('pointerdown', async (ev) => {
     const b = ev.target.closest('.neo-key');
-    if (!b) return;
+    if (!b || placingNow()) return;
     b.classList.add('down');
     try {
       if (b.dataset.matter) await post('/api/timer/toggle', { matter_id: +b.dataset.matter });
-      else if (b.dataset.action === 'next') await post('/api/timer/next-task');
+      else if (b.dataset.action === 'review') document.querySelector('#entries').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else if (b.dataset.action === 'next-task') await post('/api/timer/next-task');
       else if (b.dataset.action === 'stop') await post('/api/timer/stop');
       else if (b.dataset.action === 'dictate') {
         pressAt = Date.now();
@@ -143,6 +153,7 @@
   // ---------- try-it checklist ----------
 
   const STEPS = [
+    ['deck-changed', 'Drag a matter from the list onto a key'],
     ['started', 'Tap a matter key to start its timer'],
     ['dictated', 'Dictate what you’re doing (tap or hold Dictate)'],
     ['next-task', 'Tap Next task when you switch to a new task'],
@@ -235,7 +246,7 @@
       listenLabel.textContent = 'Dictation';
       listenText.textContent = 'Start a matter, then tap or hold Dictate and talk. Your words land in that matter’s notes, timestamped.';
     }
-    if (['started', 'next-task', 'stopped', 'split-applied', 'drafted', 'exported'].includes(event)) done.add(event);
+    if (['deck-changed', 'started', 'next-task', 'stopped', 'split-applied', 'drafted', 'exported'].includes(event)) done.add(event);
     renderSteps();
   });
 

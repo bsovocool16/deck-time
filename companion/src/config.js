@@ -17,6 +17,7 @@ const brew = (bin) => (fs.existsSync(`/opt/homebrew/bin/${bin}`) ? `/opt/homebre
 
 export const DEFAULTS = {
   port: 7331,
+  deck: { columns: 4, rows: 2 }, // Stream Deck Neo
   dictation: {
     recorder: brew('rec'), // sox; records from the macOS default input
     sox: brew('sox'),

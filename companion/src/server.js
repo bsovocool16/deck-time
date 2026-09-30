@@ -136,6 +136,9 @@ export function createServer({ store, getConfig, setConfig, fetchImpl = fetch, e
       return { mode: 'ai', total_hours: totalHours, entries: proposal };
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
+    ['GET', /^\/api\/deck$/, () => store.deck()],
+    ['PUT', /^\/api\/deck\/(\d+)$/, (b, _, [slot]) => store.setDeckSlot(+slot, b)],
+    ['POST', /^\/api\/deck\/swap$/, (b) => store.swapDeckSlots(+b.from, +b.to)],
     ['GET', /^\/api\/clients$/, () => store.listClients()],
     ['PUT', /^\/api\/clients\/([^/]+)$/, (b, _, [no]) => store.updateClient(decodeURIComponent(no), b)],
     ['POST', /^\/api\/export$/, (b) => exportDay(b)],

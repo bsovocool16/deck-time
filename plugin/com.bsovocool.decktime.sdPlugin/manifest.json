@@ -25,6 +25,23 @@
   },
   "Actions": [
     {
+      "Name": "deck-time Key",
+      "UUID": "com.bsovocool.decktime.key",
+      "Icon": "imgs/actions/key",
+      "Tooltip": "Follows the key layout set in the deck-time app. Put it on every key once, then arrange matters and functions from the app's sidebar.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "imgs/actions/key",
+          "ShowTitle": false
+        }
+      ]
+    },
+    {
       "Name": "Matter Timer",
       "UUID": "com.bsovocool.decktime.matter",
       "Icon": "imgs/actions/timer",

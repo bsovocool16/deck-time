@@ -76,10 +76,18 @@ npx streamdeck link com.bsovocool.decktime.sdPlugin   # dev install
 npx streamdeck restart com.bsovocool.decktime
 ```
 
-In the Stream Deck app, drag from the **deck-time** category:
+**Easiest setup:** in the Stream Deck app, put the **deck-time Key** action
+on every key once. From then on, arrange the deck from the companion app's
+**Keys** sidebar: drag a matter onto a key, drag keys to swap them, drag a key
+back to the sidebar to clear it, and edit each matter's short key label
+inline. The physical keys update immediately. Each key follows its position,
+so the layout lives in one place.
+
+Or set keys up individually from the **deck-time** category:
 
 | Action | What it does |
 |---|---|
+| deck-time Key | Shows whatever the app's layout assigns to that position (matter or function). |
 | Matter Timer | Pick a matter in the key's settings. Tap = start/stop. |
 | Dictate Note | Hold to talk / tap to toggle. Adds to the running matter's notes. |
 | Next Task | Marks a task boundary on the running timer (shows task # and time in task). |
@@ -87,8 +95,8 @@ In the Stream Deck app, drag from the **deck-time** category:
 | Review Day | Opens the companion in your browser. |
 | Timer Info Bar | Drag onto the Neo's info bar. Running matter + clock. |
 
-Suggested Neo layout: 5 matter keys + Dictate + Next Task + Stop, with the
-info bar showing the running timer. Put Review and more matters on page 2
+Default layout: 5 matter keys + Dictate + Next Task + Stop, with the info
+bar showing the running timer. Put Review and more matters on page 2
 (the Neo's touch page buttons), or open Review from the browser.
 
 ## Client billing rules & block billing

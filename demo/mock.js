@@ -47,7 +47,7 @@
 
   function blank() {
     seq = 1;
-    db = { matters: [], clients: new Map(), segments: [], entries: new Map(), notes: [], dictation: { status: 'idle', error: null, started_at: null } };
+    db = { matters: [], clients: new Map(), segments: [], entries: new Map(), notes: [], deck: null, dictation: { status: 'idle', error: null, started_at: null } };
   }
 
   const getMatter = (id) => db.matters.find((m) => m.id === +id) ?? null;
@@ -70,9 +70,49 @@
     const m = getMatter(id);
     if (!m) throw err(404, 'Matter not found');
     Object.assign(m, input);
-    if (input.archived) stopIfRunning(m.id);
+    if (input.archived) {
+      stopIfRunning(m.id);
+      if (db.deck) db.deck = db.deck.map((s) => (s.matter_id === m.id ? { slot: s.slot, kind: 'empty', matter_id: null } : s));
+    }
     changed();
     return m;
+  }
+
+  // ---------- key layout (same rules as the real store) ----------
+
+  function deck() {
+    if (db.deck) return db.deck.map((s) => ({ ...s }));
+    const matters = listMatters().filter((m) => m.script !== 'admin').sort((a, b) => a.id - b.id);
+    const fns = ['dictate', 'next-task', 'stop'];
+    return Array.from({ length: 8 }, (_, slot) =>
+      slot >= 5 ? { slot, kind: fns[slot - 5], matter_id: null } : matters[slot] ? { slot, kind: 'matter', matter_id: matters[slot].id } : { slot, kind: 'empty', matter_id: null },
+    );
+  }
+
+  function setDeckSlot(slot, { kind, matter_id }) {
+    const slots = deck();
+    if (!(slot >= 0 && slot < slots.length)) throw err(400, 'No such key');
+    if (!['matter', 'dictate', 'next-task', 'stop', 'review', 'empty'].includes(kind)) throw err(400, 'Unknown key type');
+    if (kind === 'matter') {
+      const m = getMatter(matter_id);
+      if (!m || m.archived) throw err(400, 'Choose an active matter');
+      for (const s of slots) if (s.kind === 'matter' && s.matter_id === m.id) Object.assign(s, { kind: 'empty', matter_id: null });
+    }
+    slots[slot] = { slot, kind, matter_id: kind === 'matter' ? +matter_id : null };
+    db.deck = slots;
+    emit('deck-changed');
+    changed();
+    return deck();
+  }
+
+  function swapDeckSlots(a, b) {
+    const slots = deck();
+    if (![a, b].every((x) => x >= 0 && x < slots.length)) throw err(400, 'No such key');
+    [slots[a], slots[b]] = [{ ...slots[b], slot: a }, { ...slots[a], slot: b }];
+    db.deck = slots;
+    emit('deck-changed');
+    changed();
+    return deck();
   }
 
   const getClient = (no) => db.clients.get(no) ?? { client_no: no, name: '', no_block_billing: 0, guidelines: '' };
@@ -326,6 +366,7 @@
       running: run ? { ...run, matter: getMatter(run.matter_id), tasks_today: taskBlocks(today, run.matter_id).length } : null,
       matters: listMatters().map((m) => ({ ...m, today_ms: todayMs[m.id] ?? 0 })),
       dictation: { ...db.dictation },
+      deck: deck(),
     };
   }
 
@@ -497,6 +538,9 @@
     ['GET', '/api/matters', (_, q) => listMatters(q.get('all') === '1')],
     ['POST', '/api/matters', (b) => createMatter(b)],
     ['PATCH', /^\/api\/matters\/(\d+)$/, (b, _, [id]) => updateMatter(id, b)],
+    ['GET', '/api/deck', () => deck()],
+    ['PUT', /^\/api\/deck\/(\d+)$/, (b, _, [slot]) => setDeckSlot(+slot, b)],
+    ['POST', '/api/deck/swap', (b) => swapDeckSlots(+b.from, +b.to)],
     ['GET', '/api/clients', () => listClients()],
     ['PUT', /^\/api\/clients\/([^/]+)$/, (b, _, [no]) => updateClient(decodeURIComponent(no), b)],
     ['POST', '/api/timer/toggle', (b) => toggle(+b.matter_id)],
@@ -653,6 +697,5 @@
       emit('reset');
     },
     state,
-    deckOrder: () => listMatters().filter((m) => m.script !== 'admin').sort((a, b) => a.id - b.id).slice(0, 5),
   };
 })();

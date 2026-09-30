@@ -62,6 +62,7 @@
 }
 #neo-bar-title { color: #8a8a84; font-size: 11px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #neo-bar-value { color: #f2f2ef; font: 600 14px/1.2 var(--mono); }
+.neo.placing .neo-key { outline: 1px dashed var(--focus); outline-offset: 2px; cursor: copy; }
 .neo-caption { font-size: 12px; color: var(--faint); }
 
 .listen {

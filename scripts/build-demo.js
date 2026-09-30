@@ -86,11 +86,6 @@ const intro = `
   </section>`;
 
 const deck = `
-      <div class="section-head">
-        <h2>Stream Deck Neo</h2>
-        <span class="hint">Click the keys. Five matters, Dictate, Next task and Stop, with the running timer on the info bar.</span>
-      </div>
-      <div class="demo-deck">
         <div class="deck-col">
           <div class="neo" id="neo" aria-label="Stream Deck Neo">
             <div class="neo-keys" id="neo-keys"></div>
@@ -104,17 +99,17 @@ const deck = `
             <div class="listen-head"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="listen-label">Dictation</span></div>
             <div id="listen-text">Start a matter, then tap or hold Dictate and talk. Your words land in that matter’s notes, timestamped.</div>
           </div>
-        </div>
-        <aside class="tryit" aria-label="Try it">
-          <div class="tryit-head"><h2>Try it</h2><span id="tryit-count"></span></div>
-          <ol id="tryit-list"></ol>
-          <span class="hint">Entries below update as you go. Everything is editable: notes, narratives, hours and codes.</span>
-        </aside>
-      </div>
-      <div id="deck" hidden></div>`;
+          <aside class="tryit" aria-label="Try it">
+            <div class="tryit-head"><h2>Try it</h2><span id="tryit-count"></span></div>
+            <ol id="tryit-list"></ol>
+            <span class="hint">Entries below update as you go. Everything is editable: notes, narratives, hours and codes.</span>
+          </aside>
+          <div id="deck" hidden></div>
+        </div>`;
 
 let body = must(bodyInner, '  <header class="topbar">', `${intro}\n  <header class="topbar">`);
-body = body.replace(/      <div class="section-head">\s*<h2>Keys<\/h2>[\s\S]*?<div id="deck" class="deck"><\/div>/, deck);
+body = must(body, '<div class="deck-col"><div id="deck" class="deck"></div></div>', deck.trim());
+body = body.replace(/<h2>Keys<\/h2>\s*<span class="hint">[^<]*<\/span>/, '<h2>Stream Deck Neo</h2>\n        <span class="hint">Click the keys to use them. Drag matters from the list onto keys to set up the deck.</span>');
 if (!body.includes('id="neo"')) throw new Error('build-demo: keys section not replaced');
 body = must(body, '<div id="toast"', '<div class="overlay" id="demo-overlay" hidden></div>\n  <div id="toast"');
 

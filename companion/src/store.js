@@ -55,6 +55,13 @@ CREATE TABLE IF NOT EXISTS entries (
   PRIMARY KEY (date, matter_id, part)
 );
 
+-- What each Stream Deck key does, by position (row * columns + column).
+CREATE TABLE IF NOT EXISTS deck_layout (
+  slot      INTEGER PRIMARY KEY,
+  kind      TEXT NOT NULL,              -- matter | dictate | next-task | stop | review | empty
+  matter_id INTEGER REFERENCES matters(id)
+);
+
 -- Timestamped notes (typed or dictated) so work can be apportioned when splitting.
 CREATE TABLE IF NOT EXISTS note_events (
   id        INTEGER PRIMARY KEY,
@@ -72,6 +79,8 @@ const CLIENT_FIELDS = ['name', 'no_block_billing', 'guidelines'];
 const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'status'];
 const STATUSES = new Set(['draft', 'ready', 'exported']);
 const BLOCK_BILLING = new Set(['', 'allowed', 'prohibited']);
+export const DECK_KINDS = new Set(['matter', 'dictate', 'next-task', 'stop', 'review', 'empty']);
+const DECK_FUNCTIONS = ['dictate', 'next-task', 'stop']; // default right-hand keys
 
 // Columns added after the first release: [table, column, definition]
 const MIGRATIONS = [
@@ -159,9 +168,75 @@ export class Store extends EventEmitter {
     if (cols.length) {
       this.db.prepare(`UPDATE matters SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`).run(...cols.map((c) => m[c]), id);
     }
-    if (m.archived) this.stopIfRunning(id);
+    if (m.archived) {
+      this.stopIfRunning(id);
+      this.db.prepare("UPDATE deck_layout SET kind = 'empty', matter_id = NULL WHERE matter_id = ?").run(id);
+    }
     this.emitChange();
     return this.getMatter(id);
+  }
+
+  // ---------- Stream Deck layout ----------
+
+  #deckSize() {
+    const { columns = 4, rows = 2 } = this.getConfig().deck ?? {};
+    return columns * rows;
+  }
+
+  /** Every key's assignment. Unsaved layouts default to the first matters, then Dictate / Next task / Stop. */
+  deck() {
+    const size = this.#deckSize();
+    const saved = new Map(this.db.prepare('SELECT * FROM deck_layout').all().map((r) => [r.slot, plain(r)]));
+    if (!saved.size) {
+      const matters = this.listMatters().filter((m) => !/admin|non-billable/i.test(m.name));
+      const fns = size >= 6 ? DECK_FUNCTIONS : [];
+      return Array.from({ length: size }, (_, slot) => {
+        const fnIndex = slot - (size - fns.length);
+        if (fnIndex >= 0) return { slot, kind: fns[fnIndex], matter_id: null };
+        const m = matters[slot];
+        return m ? { slot, kind: 'matter', matter_id: m.id } : { slot, kind: 'empty', matter_id: null };
+      });
+    }
+    return Array.from({ length: size }, (_, slot) => saved.get(slot) ?? { slot, kind: 'empty', matter_id: null });
+  }
+
+  #saveDeck(slots) {
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec('DELETE FROM deck_layout');
+      const ins = this.db.prepare('INSERT INTO deck_layout (slot, kind, matter_id) VALUES (?, ?, ?)');
+      for (const s of slots) ins.run(s.slot, s.kind, s.kind === 'matter' ? s.matter_id : null);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    this.emitChange();
+    return this.deck();
+  }
+
+  /** Put a matter or function on a key. A matter already on another key moves (no duplicates). */
+  setDeckSlot(slot, { kind, matter_id }) {
+    const slots = this.deck();
+    if (!(slot >= 0 && slot < slots.length)) throw httpError(400, 'No such key');
+    if (!DECK_KINDS.has(kind)) throw httpError(400, 'Unknown key type');
+    if (kind === 'matter') {
+      const m = this.getMatter(matter_id);
+      if (!m || m.archived) throw httpError(400, 'Choose an active matter');
+      for (const s of slots) if (s.kind === 'matter' && s.matter_id === m.id) Object.assign(s, { kind: 'empty', matter_id: null });
+    }
+    slots[slot] = { slot, kind, matter_id: kind === 'matter' ? +matter_id : null };
+    return this.#saveDeck(slots);
+  }
+
+  swapDeckSlots(a, b) {
+    const slots = this.deck();
+    if (![a, b].every((x) => x >= 0 && x < slots.length)) throw httpError(400, 'No such key');
+    [slots[a], slots[b]] = [
+      { ...slots[b], slot: a },
+      { ...slots[a], slot: b },
+    ];
+    return this.#saveDeck(slots);
   }
 
   // ---------- client billing rules ("memory") ----------
@@ -555,6 +630,7 @@ export class Store extends EventEmitter {
         ? { ...running, matter: this.getMatter(running.matter_id), tasks_today: this.taskBlocks(today, running.matter_id).length }
         : null,
       matters: this.listMatters().map((m) => ({ ...m, today_ms: todayMs[m.id] ?? 0 })),
+      deck: this.deck(),
     };
   }
 

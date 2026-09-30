@@ -41,9 +41,23 @@
     <section data-panel="today" class="panel">
       <div class="section-head">
         <h2>Keys</h2>
-        <span class="hint">Click to start or stop. Mirrors the Stream Deck. Keys 1–8 on the keyboard work too.</span>
+        <span class="hint">Mirrors the Stream Deck. Click a key to use it; drag to rearrange. Keys 1–8 on the keyboard work too.</span>
       </div>
-      <div id="deck" class="deck"></div>
+      <div class="deck-editor">
+        <div class="deck-col"><div id="deck" class="deck"></div></div>
+        <aside class="deck-sidebar" id="deck-sidebar" aria-label="Put matters on keys">
+          <input id="deck-search" type="search" placeholder="Find a matter" autocomplete="off">
+          <div class="deck-list" id="deck-list"></div>
+          <div class="deck-fns">
+            <span class="deck-fns-label">Function keys</span>
+            <button type="button" data-kind="dictate" draggable="true">Dictate</button>
+            <button type="button" data-kind="next-task" draggable="true">Next task</button>
+            <button type="button" data-kind="stop" draggable="true">Stop</button>
+            <button type="button" data-kind="review" draggable="true">Review</button>
+          </div>
+          <p class="hint">Drag a matter onto a key, or click it and then click a key. Drag a key here to clear it. Edit the short label shown on the key in the box next to each matter.</p>
+        </aside>
+      </div>
 
       <div class="section-head day-head">
         <h2>Entries</h2>

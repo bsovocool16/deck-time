@@ -384,3 +384,34 @@ test('a dictated note belongs to the task it was spoken in, even if transcribed 
   store.stop();
   assert.deepEqual(store.taskBlocks(DATE, m.id).map((b) => b.notes.map((n) => n.text)), [['reviewed disclosure schedules'], []]);
 });
+
+// ---------- Stream Deck layout ----------
+
+test('deck defaults to first matters, then Dictate / Next task / Stop', () => {
+  const { store } = setup();
+  for (const n of ['Alpha', 'Beta', 'Firm Admin (non-billable)']) store.createMatter({ name: n });
+  const deck = store.deck();
+  assert.equal(deck.length, 8);
+  assert.deepEqual(deck.map((s) => s.kind), ['matter', 'matter', 'empty', 'empty', 'empty', 'dictate', 'next-task', 'stop']);
+  assert.deepEqual(deck.slice(0, 2).map((s) => store.getMatter(s.matter_id).name), ['Alpha', 'Beta']);
+});
+
+test('placing a matter moves it; swap exchanges keys; archive clears its key', () => {
+  const { store } = setup();
+  const a = store.createMatter({ name: 'Alpha' });
+  const b = store.createMatter({ name: 'Beta' });
+  store.setDeckSlot(3, { kind: 'matter', matter_id: a.id }); // was on key 0
+  let deck = store.deck();
+  assert.equal(deck[0].kind, 'empty');
+  assert.equal(deck[3].matter_id, a.id);
+  store.swapDeckSlots(1, 3);
+  deck = store.deck();
+  assert.deepEqual([deck[1].matter_id, deck[3].matter_id], [a.id, b.id]);
+  store.setDeckSlot(7, { kind: 'review' });
+  assert.equal(store.deck()[7].kind, 'review');
+  store.updateMatter(a.id, { archived: 1 });
+  assert.equal(store.deck()[1].kind, 'empty');
+  assert.throws(() => store.setDeckSlot(9, { kind: 'stop' }), /No such key/);
+  assert.throws(() => store.setDeckSlot(0, { kind: 'matter', matter_id: a.id }), /active matter/);
+  assert.equal(store.state().deck.length, 8);
+});
