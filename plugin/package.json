@@ -8,7 +8,7 @@
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.bsovocool.decktime\"",
     "link": "streamdeck link com.bsovocool.decktime.sdPlugin",
     "validate": "streamdeck validate com.bsovocool.decktime.sdPlugin",
-    "pack": "streamdeck pack com.bsovocool.decktime.sdPlugin --force"
+    "pack": "streamdeck pack com.bsovocool.decktime.sdPlugin --output ../dist --force"
   },
   "dependencies": {
     "@elgato/streamdeck": "^3.0.1"
