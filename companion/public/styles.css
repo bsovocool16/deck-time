@@ -347,6 +347,9 @@ label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap;
 .workspace-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
 #workspace-settings small.wide { grid-column: 1 / -1; }
 
+.install-tip p, .install-tip ul { margin: 0; color: var(--ink-2); max-width: 70ch; }
+.install-tip ul { padding-left: 18px; display: grid; gap: 4px; }
+
 /* ---------- toast ---------- */
 
 .toast {
