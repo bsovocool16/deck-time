@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -33,9 +34,12 @@ export function createServer({
   const clients = new Set();
   store.on('change', () => broadcast());
   dictation?.on('change', () => broadcast());
+  // A silent recording means the microphone needs attention again.
+  dictation?.on('nosound', () => setConfig(deepMerge(getConfig(), { dictation: { verified: false } })));
   const fullState = () => ({
     ...store.state(),
     dictation: dictation?.snapshot() ?? null,
+    mic_verified: !!dictation && getConfig().dictation?.verified === true,
     workspace: workspace?.get() ?? 'real',
   });
   const aiOn = () => getConfig().features?.ai !== false;
@@ -163,6 +167,14 @@ export function createServer({
       return { mode: 'ai', total_hours: totalHours, entries: proposal };
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
+    ['POST', /^\/api\/dictation\/test$/, async () => {
+      if (!dictation) throw httpError(501, 'Dictation is not available in this edition');
+      const result = await dictation.testMic(3);
+      setConfig(deepMerge(getConfig(), { dictation: { verified: result.heard } }));
+      broadcast();
+      return { ...result, platform: process.platform };
+    }],
+    ['POST', /^\/api\/system\/microphone-settings$/, () => openMicrophoneSettings()],
     ['GET', /^\/api\/workspace$/, () => ({ workspace: workspace?.get() ?? 'real', available: !!workspace })],
     ['POST', /^\/api\/workspace$/, (b) => {
       if (!workspace) throw httpError(501, 'Demo day is not available here');
@@ -252,6 +264,19 @@ export function createServer({
     for (const res of clients) res.end();
   });
   return server;
+}
+
+/** Open the OS page where microphone access is granted. Opens a settings pane; changes nothing. */
+function openMicrophoneSettings() {
+  const target =
+    process.platform === 'darwin'
+      ? ['open', ['x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone']]
+      : process.platform === 'win32'
+        ? ['cmd', ['/c', 'start', '', 'ms-settings:privacy-microphone']]
+        : null;
+  if (!target) throw httpError(501, 'Open your system privacy settings to allow microphone access');
+  spawn(target[0], target[1], { detached: true, stdio: 'ignore' }).unref();
+  return { ok: true };
 }
 
 function dateParam(q) {

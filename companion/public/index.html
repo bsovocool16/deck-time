@@ -47,6 +47,30 @@
   <main class="wrap">
     <!-- TODAY -->
     <section data-panel="today" class="panel">
+      <section id="mic-setup" class="mic-setup" hidden aria-labelledby="mic-setup-title">
+        <div class="mic-setup-head">
+          <h2 id="mic-setup-title">Set up dictation</h2>
+          <button type="button" class="link" id="mic-dismiss">Not now</button>
+        </div>
+        <p id="mic-intro">Dictation needs permission to use your microphone. Click <strong>Test microphone</strong> and say a few words. If your Mac asks whether <strong>Stream Deck</strong> can use the microphone, choose <strong>Allow</strong>.</p>
+        <div class="mic-actions">
+          <button type="button" class="primary" id="mic-test">Test microphone</button>
+          <span id="mic-result" class="mic-result" aria-live="polite"></span>
+        </div>
+        <div id="mic-fix" class="mic-fix" hidden>
+          <p><strong>No sound came through.</strong> To fix it:</p>
+          <ol>
+            <li><button type="button" class="link" id="mic-open-settings">Open Microphone settings</button> and turn on <strong>Elgato Stream Deck</strong>.</li>
+            <li>Quit and reopen the Stream Deck app so the change takes effect.</li>
+            <li>Check that your microphone is selected under System Settings → Sound → Input, and that it isn't muted.</li>
+            <li>Then test again.</li>
+          </ol>
+          <p class="mic-tccutil">Stream Deck not in the list? Run this in Terminal, reopen Stream Deck, and test again so your Mac asks for permission:
+            <span class="copy-row"><code id="mic-reset-cmd">tccutil reset Microphone com.elgato.StreamDeck</code><button type="button" id="mic-copy">Copy</button></span>
+          </p>
+        </div>
+      </section>
+
       <div class="section-head">
         <h2>Keys</h2>
         <span class="hint">Mirrors the Stream Deck. Click a key to use it; drag to rearrange. Keys 1–8 on the keyboard work too.</span>

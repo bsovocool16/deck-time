@@ -336,6 +336,22 @@ td button { height: 24px; }
 .client-foot small { color: var(--muted); }
 label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap; font-size: 13px; color: var(--ink); }
 
+/* ---------- microphone setup ---------- */
+
+.mic-setup { margin-top: 24px; padding: 18px 20px; background: var(--sheet); border: 1px solid var(--rule); border-left: 3px solid var(--focus); border-radius: 6px; display: grid; gap: 12px; max-width: 760px; }
+.mic-setup-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.mic-setup-head h2 { color: var(--ink); }
+.mic-setup p, .mic-setup ol { margin: 0; color: var(--ink-2); max-width: 68ch; line-height: 1.5; }
+.mic-setup ol { padding-left: 20px; display: grid; gap: 4px; }
+.mic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.mic-result { color: var(--live); font-size: 13px; }
+.mic-fix { display: grid; gap: 10px; padding-top: 4px; border-top: 1px solid var(--rule); }
+.mic-fix > p:first-child { padding-top: 10px; color: var(--danger); }
+.mic-tccutil { font-size: 12.5px; }
+.copy-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; }
+.copy-row code { font-family: var(--mono); font-size: 12px; padding: 4px 8px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--paper); overflow-x: auto; max-width: 100%; }
+.copy-row button { height: 26px; }
+
 /* ---------- editions & demo day ---------- */
 
 .no-ai [data-action="draft"], .no-ai [data-action="codes"], .no-ai #draft-all, .no-ai .ai-only { display: none !important; }

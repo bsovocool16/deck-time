@@ -71,6 +71,7 @@ function connect() {
     renderRunning();
     renderDeck();
     renderSidebar();
+    renderMicSetup();
     const demo = state.workspace === 'demo';
     $('#demo-banner').hidden = !demo;
     $('#demo-toggle').checked = demo;
@@ -176,6 +177,58 @@ async function placeOnKey(slot, item) {
 }
 
 $('#deck-search').addEventListener('input', () => renderSidebar(true));
+
+// ---------- microphone setup ----------
+
+let micDismissed = false;
+let micFailed = false;
+let micTesting = false;
+
+function renderMicSetup() {
+  const d = state.dictation;
+  // A silent dictation brings the card back even after "Not now".
+  if (d?.error && /No sound was recorded/.test(d.error)) [micDismissed, micFailed] = [false, true];
+  const show = !!d && !state.mic_verified && !micDismissed;
+  $('#mic-setup').hidden = !show;
+  $('#mic-fix').hidden = !micFailed;
+  if (!micTesting) $('#mic-test').textContent = micFailed ? 'Test again' : 'Test microphone';
+}
+
+$('#mic-test').addEventListener('click', guard(async (ev) => {
+  const btn = ev.currentTarget;
+  micTesting = true;
+  btn.disabled = true;
+  $('#mic-result').textContent = '';
+  let n = 3;
+  btn.textContent = `Listening… ${n}`;
+  const tick = setInterval(() => (btn.textContent = `Listening… ${Math.max(--n, 1)}`), 1000);
+  try {
+    const r = await api('/api/dictation/test', { method: 'POST', body: {} });
+    micFailed = !r.heard;
+    $('#mic-result').textContent = r.heard ? 'Microphone works. Dictation is ready.' : '';
+    if (r.heard) toast('Microphone works. Dictation is ready.');
+  } finally {
+    clearInterval(tick);
+    micTesting = false;
+    btn.disabled = false;
+    renderMicSetup();
+  }
+}));
+$('#mic-dismiss').addEventListener('click', () => {
+  micDismissed = true;
+  renderMicSetup();
+});
+$('#mic-open-settings').addEventListener('click', guard(() => api('/api/system/microphone-settings', { method: 'POST', body: {} })));
+$('#mic-copy').addEventListener('click', async (ev) => {
+  const cmd = $('#mic-reset-cmd').textContent;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    ev.target.textContent = 'Copied';
+  } catch {
+    getSelection().selectAllChildren($('#mic-reset-cmd'));
+    ev.target.textContent = 'Press ⌘C';
+  }
+});
 
 // ---------- demo day ----------
 

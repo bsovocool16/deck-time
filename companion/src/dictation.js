@@ -73,6 +73,7 @@ export class Dictation extends EventEmitter {
       const peak = await this.peakLevel(this.file);
       if (peak !== null && peak < SILENCE_PEAK) {
         this.#set('idle', NO_SOUND);
+        this.emit('nosound');
         return '';
       }
       // Leading silence stops whisper from dropping words spoken right at key-down.
@@ -93,6 +94,33 @@ export class Dictation extends EventEmitter {
     if (this.status === 'recording') return { text: await this.stop() };
     this.start(context);
     return { recording: true };
+  }
+
+  /**
+   * Record a few seconds and report whether any sound arrived. On macOS the
+   * first recording is also what makes the system ask for microphone access.
+   */
+  async testMic(seconds = 3) {
+    if (this.status !== 'idle') throw Object.assign(new Error(`Dictation is ${this.status}`), { status: 409 });
+    const cfg = this.getConfig().dictation;
+    const file = path.join(os.tmpdir(), `deck-time-mictest-${process.pid}-${Date.now()}.wav`);
+    const env = cfg.device ? { ...process.env, AUDIODEV: cfg.device } : process.env;
+    this.#set('testing');
+    try {
+      const result = await new Promise((resolve) => {
+        const p = this.spawn(cfg.recorder, ['-q', '-c', '1', '-r', '16000', '-b', '16', file, 'trim', '0', String(seconds)], { env });
+        p.on('error', (e) => resolve(e));
+        p.on('exit', (code) => resolve(code === 0 ? true : new Error(`The recorder stopped unexpectedly (code ${code})`)));
+      });
+      if (result !== true) {
+        throw Object.assign(result.code === 'ENOENT' ? new Error(`"${cfg.recorder}" not found. Install sox: brew install sox`) : result, { status: 500 });
+      }
+      const peak = await this.peakLevel(file);
+      return { peak, heard: peak !== null && peak >= SILENCE_PEAK };
+    } finally {
+      fs.rm(file, { force: true }, () => {});
+      this.#set('idle');
+    }
   }
 
   /** Loudest sample in the recording (0..1), or null if sox can't tell us. */

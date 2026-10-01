@@ -366,6 +366,7 @@
       running: run ? { ...run, matter: getMatter(run.matter_id), tasks_today: taskBlocks(today, run.matter_id).length } : null,
       matters: listMatters().map((m) => ({ ...m, today_ms: todayMs[m.id] ?? 0 })),
       dictation: { ...db.dictation },
+      mic_verified: true, // dictation is simulated in the demo
       deck: deck(),
     };
   }
@@ -527,7 +528,7 @@
 
   const E = '(\\d{4}-\\d{2}-\\d{2})\\/(\\d+)';
   const routes = [
-    ['GET', '/api/state', () => state()],
+    ['GET', '/api/state', () => ({ ...state(), mic_verified: true })],
     ['GET', '/api/config', () => config],
     ['PUT', '/api/config', (b) => {
       const merge = (t, s) => { for (const [k, v] of Object.entries(s)) t[k] = v && typeof v === 'object' && !Array.isArray(v) && k !== 'defaults' ? merge(t[k] ?? {}, v) : v; return t; };

@@ -28,6 +28,7 @@ function setup(transcript, peak = 0.42) {
   const notes = [];
   const spawnImpl = (cmd, args) => {
     calls.push({ cmd, args });
+    if (cmd === 'rec' && args.includes('trim')) return fakeProc({ stdout: '' }); // mic test exits on its own
     if (cmd === 'rec') return fakeProc({ stdout: null });
     if (cmd === 'sox' && args.includes('stat')) return fakeProc({ stdout: '', stderr: `Maximum amplitude:     ${peak}\n` });
     if (cmd === 'sox') return fakeProc({ stdout: '' });
@@ -93,4 +94,22 @@ test('a transcript that only echoes the prompt is dropped', async () => {
   d.start({ matterId: 1, prompt: 'Legal billing notes for Acme / Globex Merger.' });
   assert.equal(await d.stop(), '');
   assert.equal(notes.length, 0);
+});
+
+test('microphone test reports whether sound arrived', async () => {
+  let { d, calls } = setup('', 0.2);
+  assert.deepEqual(await d.testMic(1), { peak: 0.2, heard: true });
+  assert.deepEqual(calls[0].args.slice(-3), ['trim', '0', '1']);
+  assert.equal(d.status, 'idle');
+  ({ d } = setup('', 0.00002));
+  assert.equal((await d.testMic(1)).heard, false);
+});
+
+test('a silent dictation emits nosound', async () => {
+  const { d } = setup('x', 0.0001);
+  let fired = false;
+  d.on('nosound', () => (fired = true));
+  d.start({ matterId: 1 });
+  await d.stop();
+  assert.equal(fired, true);
 });
