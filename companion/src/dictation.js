@@ -8,6 +8,9 @@ import path from 'node:path';
 // with whisper.cpp. Audio never leaves the machine and is deleted afterward.
 
 const MAX_MS = 5 * 60_000;
+const SILENCE_PEAK = 0.003; // about -50 dBFS: below this, nothing was captured
+export const NO_SOUND =
+  'No sound was recorded. Allow microphone access for Stream Deck (System Settings → Privacy & Security → Microphone) and check the input device in Sound settings.';
 
 export class Dictation extends EventEmitter {
   constructor({ getConfig, onText, spawnImpl = spawn }) {
@@ -65,9 +68,16 @@ export class Dictation extends EventEmitter {
 
     const padded = this.file.replace(/\.wav$/, '-pad.wav');
     try {
+      const { sox } = this.getConfig().dictation;
+      // A silent file usually means the microphone isn't reaching us (permission or input device).
+      const peak = await this.peakLevel(this.file);
+      if (peak !== null && peak < SILENCE_PEAK) {
+        this.#set('idle', NO_SOUND);
+        return '';
+      }
       // Leading silence stops whisper from dropping words spoken right at key-down.
-      const audio = (await this.#run(this.getConfig().dictation.sox, [this.file, padded, 'pad', '0.5', '0.3'])) ? padded : this.file;
-      const text = await this.transcribe(audio);
+      const audio = (await this.#run(sox, [this.file, padded, 'pad', '0.5', '0.3'])) ? padded : this.file;
+      const text = dropPromptEcho(await this.transcribe(audio), this.context?.prompt);
       if (text) this.onText(text, this.context);
       this.#set('idle', text ? null : 'Heard nothing');
       return text;
@@ -83,6 +93,20 @@ export class Dictation extends EventEmitter {
     if (this.status === 'recording') return { text: await this.stop() };
     this.start(context);
     return { recording: true };
+  }
+
+  /** Loudest sample in the recording (0..1), or null if sox can't tell us. */
+  peakLevel(file) {
+    return new Promise((resolve) => {
+      const p = this.spawn(this.getConfig().dictation.sox, [file, '-n', 'stat']);
+      let err = '';
+      p.stderr?.on('data', (d) => (err += d));
+      p.on('error', () => resolve(null));
+      p.on('exit', () => {
+        const m = err.match(/Maximum amplitude:\s*(-?[\d.]+)/);
+        resolve(m ? Math.abs(Number(m[1])) : null);
+      });
+    });
   }
 
   /** Resolves true on exit code 0, false on any failure. */
@@ -120,4 +144,18 @@ export function cleanTranscript(text) {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * On silent or near-silent audio, Whisper tends to repeat its prompt back
+ * ("Legal billing notes for Acme."). Treat a transcript that's only the prompt,
+ * or only the matter name, as nothing heard.
+ */
+export function dropPromptEcho(text, prompt) {
+  if (!text || !prompt) return text;
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const t = norm(text);
+  const p = norm(prompt);
+  const matter = norm(prompt.replace(/^legal billing notes for /i, ''));
+  return t === p || t === matter || (t.length > 0 && p.includes(t)) ? '' : text;
 }

@@ -4,9 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { cleanTranscript, Dictation } from '../src/dictation.js';
+import { cleanTranscript, Dictation, dropPromptEcho, NO_SOUND } from '../src/dictation.js';
 
-function fakeProc({ stdout = '', code = 0 } = {}) {
+function fakeProc({ stdout = '', stderr = '', code = 0 } = {}) {
   const p = new EventEmitter();
   p.stdout = new EventEmitter();
   p.stderr = new EventEmitter();
@@ -14,13 +14,14 @@ function fakeProc({ stdout = '', code = 0 } = {}) {
   if (stdout !== null) {
     setImmediate(() => {
       p.stdout.emit('data', stdout);
+      if (stderr) p.stderr.emit('data', stderr);
       p.emit('exit', code);
     });
   }
   return p;
 }
 
-function setup(transcript) {
+function setup(transcript, peak = 0.42) {
   const model = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dt-')), 'model.bin');
   fs.writeFileSync(model, '');
   const calls = [];
@@ -28,6 +29,7 @@ function setup(transcript) {
   const spawnImpl = (cmd, args) => {
     calls.push({ cmd, args });
     if (cmd === 'rec') return fakeProc({ stdout: null });
+    if (cmd === 'sox' && args.includes('stat')) return fakeProc({ stdout: '', stderr: `Maximum amplitude:     ${peak}\n` });
     if (cmd === 'sox') return fakeProc({ stdout: '' });
     return fakeProc({ stdout: transcript });
   };
@@ -45,9 +47,10 @@ test('record then transcribe appends a note for the matter running at start', as
   assert.equal(text, 'Call with opposing counsel regarding the NDA.');
   assert.deepEqual(notes, [['Call with opposing counsel regarding the NDA.', 7]]);
   assert.equal(d.status, 'idle');
-  assert.deepEqual(calls[1].args.slice(2), ['pad', '0.5', '0.3']);
-  assert.ok(calls[2].args.includes('--prompt'));
-  assert.match(calls[2].args[3], /-pad\.wav$/);
+  assert.deepEqual(calls[1].args.slice(1), ['-n', 'stat']);
+  assert.deepEqual(calls[2].args.slice(2), ['pad', '0.5', '0.3']);
+  assert.ok(calls[3].args.includes('--prompt'));
+  assert.match(calls[3].args[3], /-pad\.wav$/);
 });
 
 test('silence produces no note', async () => {
@@ -71,4 +74,23 @@ test('cannot start twice', () => {
 
 test('cleanTranscript strips timestamps and sound tags', () => {
   assert.equal(cleanTranscript('[00:00:00.000 --> 00:00:02.000]  Reviewed the SPA.\n(keyboard clicking)\n[MUSIC]\n and markup.'), 'Reviewed the SPA. and markup.');
+});
+
+test('a silent recording says so instead of transcribing', async () => {
+  const { d, calls, notes } = setup('Acme / Globex Merger.', 0.0001);
+  d.start({ matterId: 1, prompt: 'Legal billing notes for Acme / Globex Merger.' });
+  assert.equal(await d.stop(), '');
+  assert.equal(notes.length, 0);
+  assert.equal(d.error, NO_SOUND);
+  assert.equal(calls.some((c) => c.cmd === 'whisper-cli'), false);
+});
+
+test('a transcript that only echoes the prompt is dropped', async () => {
+  assert.equal(dropPromptEcho('Acme / Globex Merger.', 'Legal billing notes for Acme / Globex Merger.'), '');
+  assert.equal(dropPromptEcho('Legal billing notes for Acme / Globex Merger.', 'Legal billing notes for Acme / Globex Merger.'), '');
+  assert.equal(dropPromptEcho('Reviewed the Acme disclosure schedules.', 'Legal billing notes for Acme / Globex Merger.'), 'Reviewed the Acme disclosure schedules.');
+  const { d, notes } = setup(' Acme / Globex Merger.\n');
+  d.start({ matterId: 1, prompt: 'Legal billing notes for Acme / Globex Merger.' });
+  assert.equal(await d.stop(), '');
+  assert.equal(notes.length, 0);
 });
