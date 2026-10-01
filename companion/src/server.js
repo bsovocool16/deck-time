@@ -9,6 +9,7 @@ import { exportable, learnFromTim, toCsv, toTim, validateForTim } from './export
 import { httpError } from './store.js';
 import { isDate, localDate } from './time.js';
 
+const DEMO_TIMEKEEPER = { id: '10001', name: 'Demo Attorney' };
 const DEFAULT_PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 const MIME = {
   '.html': 'text/html',
@@ -200,7 +201,8 @@ export function createServer({
 
   function exportDay({ date, format = 'tim', includeExported = false, markExported = true, force = false }) {
     if (!isDate(date)) throw httpError(400, 'date must be YYYY-MM-DD');
-    const config = getConfig();
+    // Demo day exports carry a fictional timekeeper, so they're safe to show.
+    const config = workspace?.get() === 'demo' ? { ...getConfig(), timekeeper: DEMO_TIMEKEEPER } : getConfig();
     const entries = exportable(store.day(date).entries, { includeExported });
     if (!entries.length) throw httpError(400, 'Nothing to export for that day');
     const problems = format === 'csv' ? entries.filter((e) => !e.narrative.trim()).map((e) => `${e.matter.name}: missing narrative`) : validateForTim(entries, config);

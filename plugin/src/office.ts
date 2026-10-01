@@ -16,8 +16,10 @@ export async function startEmbeddedCompanion(): Promise<void> {
 		return;
 	}
 	const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "app");
+	// A machine with the local model and recorder installed can run the full edition here too.
+	const edition = config.edition === "full" ? "full" : "office";
 	try {
-		await startCompanion({ edition: "office", publicDir, log: (m: string) => streamDeck.logger.info(m) });
+		await startCompanion({ edition, publicDir, log: (m: string) => streamDeck.logger.info(m) });
 	} catch (e) {
 		const err = e as NodeJS.ErrnoException;
 		if (err.code === "EADDRINUSE") streamDeck.logger.info("deck-time is already running on this computer; using it");

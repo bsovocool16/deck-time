@@ -87,3 +87,21 @@ test('reset demo day starts the demo over', async () => {
   assert.equal(labels.includes('Changed'), false);
   await api('/api/workspace', { method: 'POST', body: { workspace: 'real' } });
 });
+
+test('demo day exports use a fictional timekeeper', async () => {
+  await api('/api/config', { method: 'PUT', body: { timekeeper: { id: '77777' } } });
+  await api('/api/workspace', { method: 'POST', body: { workspace: 'demo' } });
+  const { today, matters } = await json('/api/state');
+  const stark = matters.find((m) => m.label === 'Stark Board');
+  await api('/api/segments', { method: 'POST', body: { matter_id: stark.id, start_ms: Date.now() - 20 * 60_000, end_ms: Date.now() - 5 * 60_000 } });
+  // Finish every entry on the sample day so the export validates.
+  for (const e of (await json(`/api/day?date=${today}`)).entries) {
+    const codes = e.matter.code_set === 'litigation' ? { task_code: 'L120', activity_code: 'A104' } : e.matter.code_set ? { task_code: 'C300', activity_code: 'A104' } : {};
+    await api(`/api/entries/${today}/${e.matter_id}${e.part ? `/${e.part}` : ''}`, { method: 'PATCH', body: { narrative: 'Reviewed documents.', ...codes } });
+  }
+  const out = await json('/api/export', { method: 'POST', body: { date: today, markExported: false } });
+  assert.equal(out.error, undefined, out.error);
+  assert.match(out.body, /\|tk=10001\|/);
+  assert.doesNotMatch(out.body, /77777/);
+  await api('/api/workspace', { method: 'POST', body: { workspace: 'real' } });
+});

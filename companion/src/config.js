@@ -4,8 +4,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ACTIVITY_CODES, TASK_SETS } from './codes.js';
 
-// Large models live in the repo's (gitignored) models/ folder, e.g. on an external disk.
-export const MODELS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'models');
 
 // All personal data (DB, config, exports) lives outside the repo:
 // ~/.deck-time on macOS, %APPDATA%\deck-time on Windows.
@@ -26,6 +24,11 @@ export function pathsFor(home) {
 }
 
 export const HOME = defaultHome();
+
+// Large models: the repo's (gitignored) models/ folder when running from source
+// (e.g. on an external disk), otherwise the data folder's models/.
+const REPO_MODELS = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'models');
+export const MODELS_DIR = fs.existsSync(REPO_MODELS) ? REPO_MODELS : path.join(HOME, 'models');
 export const CONFIG_PATH = pathsFor(HOME).config;
 export const DB_PATH = pathsFor(HOME).db;
 export const EXPORT_DIR = pathsFor(HOME).exports;
@@ -39,6 +42,7 @@ export const DEFAULTS = {
   features: { ai: true, dictation: true },
   workspace: 'real', // 'real' | 'demo' (fictional matters for showing people)
   embedded: true, // let the Stream Deck plugin run deck-time itself; set false where you run `npm start` instead
+  edition: 'office', // what the plugin runs: 'office' (no AI or dictation) or 'full' (needs Ollama, sox and Whisper on this machine)
   deck: { columns: 4, rows: 2 }, // Stream Deck Neo
   dictation: {
     recorder: brew('rec'), // sox; records from the macOS default input
