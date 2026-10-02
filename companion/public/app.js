@@ -174,7 +174,7 @@ function renderSidebar(force = false) {
           return `<div class="deck-item ${slot != null ? 'on' : ''} ${picked ? 'picked' : ''}" draggable="true" data-kind="matter" data-matter="${m.id}" title="Drag onto a key, or click then click a key">
             <span class="swatch" style="background:${esc(m.color)}"></span>
             <span class="item-name">${esc(m.name)}</span>
-            <input class="item-label" data-label="${m.id}" value="${esc(m.label)}" maxlength="14" aria-label="Key label for ${esc(m.name)}" title="Key label (up to 14 characters)">
+            <input class="item-label" data-label="${m.id}" value="${esc(m.label)}" maxlength="24" aria-label="Key label for ${esc(m.name)}" title="Key label (up to 24 characters; longer labels use a smaller font on the key)">
             <span class="slot-no">${slot != null ? `Key ${slot + 1}` : ''}</span>
           </div>`;
         })

@@ -55,10 +55,48 @@ function text(s: string, y: number, { size = 22, weight = 600, fill = PAPER, mon
 	return `<text x="${X}" y="${y}" ${mono ? MONO : SANS} font-size="${size}" font-weight="${weight}" fill="${fill}">${esc(s)}</text>`;
 }
 
+// Average bold character width as a fraction of font size (Helvetica-ish), and usable label width.
+const CHAR_W = 0.52;
+const LABEL_W = 144 - X - 10;
+
+/**
+ * Fit a label on the key: the normal size on up to two lines if it fits,
+ * otherwise step the font down and allow a third line. Long single words are
+ * cut with an ellipsis only at the smallest size.
+ */
+export function fitLabel(s: string): { size: number; lines: string[] } {
+	for (const [size, maxLines] of [[22, 2], [20, 2], [18, 3], [16, 3]] as const) {
+		const max = Math.floor(LABEL_W / (size * CHAR_W));
+		const words = s.trim().split(/\s+/);
+		if (words.some((w) => w.length > max)) continue;
+		const lines = wrapWords(words, max);
+		if (lines.length <= maxLines) return { size, lines };
+	}
+	const max = Math.floor(LABEL_W / (16 * CHAR_W));
+	const lines = wrapWords(s.trim().split(/\s+/), max).slice(0, 3);
+	return { size: 16, lines: lines.map((l) => (l.length > max ? l.slice(0, max - 1) + "…" : l)) };
+}
+
+function wrapWords(words: string[], max: number): string[] {
+	const lines: string[] = [];
+	let line = "";
+	for (const w of words) {
+		if (!line) line = w;
+		else if ((line + " " + w).length <= max) line += " " + w;
+		else {
+			lines.push(line);
+			line = w;
+		}
+	}
+	if (line) lines.push(line);
+	return lines;
+}
+
 function label(s: string, y: number, fill = PAPER): string {
-	return wrap(s)
-		.map((l, i) => text(l, y + i * 25, { fill }))
-		.join("");
+	const { size, lines } = fitLabel(s);
+	// Three lines start a little higher so they clear the clock or hours at the bottom.
+	const top = lines.length > 2 ? y - 8 : y;
+	return lines.map((l, i) => text(l, top + i * Math.round(size * 1.13), { fill, size })).join("");
 }
 
 const tab = (color: string) => `<rect x="${X}" y="16" width="26" height="5" rx="1" fill="${color}"/>`;

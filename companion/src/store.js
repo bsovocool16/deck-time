@@ -151,7 +151,7 @@ export class Store extends EventEmitter {
     const m = pick(input, MATTER_FIELDS);
     validateMatter(m);
     m.name = m.name.trim();
-    if (!m.label) m.label = m.name.slice(0, 14);
+    if (!m.label) m.label = m.name.slice(0, 24);
     const cols = Object.keys(m);
     const { lastInsertRowid } = this.db
       .prepare(`INSERT INTO matters (${cols.join(', ')}, created_at) VALUES (${cols.map(() => '?').join(', ')}, ?)`)
