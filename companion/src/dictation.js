@@ -78,7 +78,7 @@ export class Dictation extends EventEmitter {
       }
       // Leading silence stops whisper from dropping words spoken right at key-down.
       const audio = (await this.#run(sox, [this.file, padded, 'pad', '0.5', '0.3'])) ? padded : this.file;
-      const text = dropPromptEcho(await this.transcribe(audio), this.context?.prompt);
+      const text = dropPromptEcho(await this.transcribe(audio), this.context?.echoes ?? this.context?.prompt);
       if (text) {
         this.onText(text, this.context);
         this.last = { text, matter_id: this.context?.matterId ?? null, at: Date.now() };
@@ -179,14 +179,43 @@ export function cleanTranscript(text) {
 
 /**
  * On silent or near-silent audio, Whisper tends to repeat its prompt back
- * ("Legal billing notes for Acme."). Treat a transcript that's only the prompt,
- * or only the matter name, as nothing heard.
+ * ("Legal billing notes for Acme."). Treat a transcript that's only the
+ * prompt's opening line, or only the matter name, as nothing heard. `echoes`
+ * is that short list (not the vocabulary, so a real "disclosure schedules"
+ * survives); a plain prompt string is accepted too.
  */
-export function dropPromptEcho(text, prompt) {
-  if (!text || !prompt) return text;
+export function dropPromptEcho(text, echoes) {
+  if (!text || !echoes) return text;
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const t = norm(text);
-  const p = norm(prompt);
-  const matter = norm(prompt.replace(/^legal billing notes for /i, ''));
-  return t === p || t === matter || (t.length > 0 && p.includes(t)) ? '' : text;
+  const list = (Array.isArray(echoes) ? echoes : [echoes, echoes.replace(/^legal billing notes for /i, '')]).map(norm).filter(Boolean);
+  return list.some((e) => t === e || (t.length > 0 && e.includes(t))) ? '' : text;
+}
+
+/** Words lawyers dictate that Whisper tends to mishear without a hint. Editable in Settings. */
+export const DEFAULT_VOCABULARY = [
+  'seller', 'buyer', 'disclosure schedules', 'merger agreement', 'purchase agreement', 'stock purchase agreement',
+  'reps and warranties', 'indemnification', 'escrow', 'earnout', 'closing conditions', 'MAC', 'material adverse change',
+  'termination fee', 'fairness opinion', 'special committee', 'board minutes', 'resolutions', 'proxy statement',
+  '8-K', '10-K', '10-Q', 'SEC', 'Delaware', 'fiduciary duties', 'credit agreement', 'covenants', 'term sheet', 'NDA',
+  'due diligence', 'interrogatories', 'requests for production', 'deposition', 'privilege log', 'meet and confer',
+  'motion to dismiss', 'summary judgment', 'opposing counsel', 'general counsel', 'CFO', 'redline', 'markup',
+  'issues list', 'signature pages', 'closing checklist', 'IP', 'licensing',
+];
+
+/**
+ * The hint Whisper gets: what the note is about, then matter names and legal
+ * vocabulary so domain words come out right. Kept short (Whisper reads only
+ * the last ~220 tokens of a prompt).
+ */
+export function dictationPrompt(matter, { matters = [], vocabulary } = {}) {
+  const head = `Legal billing notes for ${matter.name}.`;
+  const custom = typeof vocabulary === 'string' ? vocabulary.split(/[,\n]/) : vocabulary;
+  const terms = [...new Set([...(custom?.length ? custom : DEFAULT_VOCABULARY), ...matters.map((m) => m.name)].map((s) => String(s).trim()).filter(Boolean))];
+  let prompt = `${head} Terms: ${terms.join(', ')}.`;
+  while (prompt.length > 900 && terms.length) {
+    terms.pop();
+    prompt = `${head} Terms: ${terms.join(', ')}.`;
+  }
+  return { prompt, echoes: [head, matter.name] };
 }

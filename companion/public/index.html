@@ -189,6 +189,12 @@
         <label class="ai-only">Model <input name="ai.model" list="ai-models"><datalist id="ai-models"></datalist></label>
         <label class="wide ai-only">House style guide <textarea name="ai.styleGuide" rows="6"></textarea></label>
 
+        <h3 class="dictation-only">Dictation</h3>
+        <label class="wide dictation-only">Words to listen for (comma-separated)
+          <textarea name="dictation.vocabulary" rows="3" placeholder="Leave blank for built-in legal terms (disclosure schedules, indemnification, interrogatories…). Your matter names are always included."></textarea>
+          <small>Helps the transcriber spell names and terms of art correctly: client and counterparty names, deal code names, defined terms.</small>
+        </label>
+
         <h3>Intapp .TIM export <span id="tim-status" class="status"></span></h3>
         <label class="wide">Learn format from an Intapp export
           <input type="file" id="tim-learn" accept=".tim,.TIM,.txt">

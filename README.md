@@ -82,6 +82,12 @@ curl -L -o models/whisper/ggml-small.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
 ```
 
+For better accuracy, use `ggml-large-v3-turbo.bin` (about 1.6 GB, same source)
+and set `dictation.model` to it in `~/.deck-time/config.json`; it takes about
+1.3 s per note on an M4 Pro. Settings → *Dictation* takes a list of words to
+listen for (client names, deal code names); matter names and common legal terms
+are always included.
+
 Dictation records from the **macOS default input** (System Settings → Sound →
 Input). Pick your mic there, e.g. a DJI Mic Mini receiver. The first recording
 triggers a macOS microphone permission prompt for whatever app launched the

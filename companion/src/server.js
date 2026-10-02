@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { aiStatus, draftNarrative, normalizeSplit, proposeSplit, suggestCodes } from './ai.js';
 import { codesFor } from './codes.js';
 import { EXPORT_DIR, deepMerge } from './config.js';
+import { dictationPrompt } from './dictation.js';
 import { exportable, learnFromTim, toCsv, toTim, validateForTim } from './export.js';
 import { httpError } from './store.js';
 import { isDate, localDate } from './time.js';
@@ -63,7 +64,8 @@ export function createServer({
       const running = store.running();
       if (!running) throw httpError(400, 'Start a timer first; dictation goes into its notes');
       const matter = store.getMatter(running.matter_id);
-      dictation.start({ matterId: matter.id, prompt: `Legal billing notes for ${matter.name}.`, startedAt: store.now() });
+      const hint = dictationPrompt(matter, { matters: store.listMatters(), vocabulary: getConfig().dictation?.vocabulary });
+      dictation.start({ matterId: matter.id, ...hint, startedAt: store.now() });
       return { recording: true };
     }],
     ['GET', /^\/api\/matters$/, (_, q) => store.listMatters({ includeArchived: q.get('all') === '1' })],

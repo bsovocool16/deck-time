@@ -50,6 +50,7 @@ export const DEFAULTS = {
     whisper: brew('whisper-cli'), // whisper.cpp
     model: path.join(MODELS_DIR, 'whisper', 'ggml-small.en.bin'),
     device: '', // blank = system default input (set in System Settings → Sound)
+    vocabulary: '', // comma-separated words to help transcription; blank = built-in legal terms
   },
   timekeeper: {
     id: '',

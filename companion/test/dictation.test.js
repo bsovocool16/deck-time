@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { cleanTranscript, Dictation, dropPromptEcho, NO_SOUND } from '../src/dictation.js';
+import { cleanTranscript, Dictation, dictationPrompt, dropPromptEcho, NO_SOUND } from '../src/dictation.js';
 
 function fakeProc({ stdout = '', stderr = '', code = 0 } = {}) {
   const p = new EventEmitter();
@@ -114,4 +114,22 @@ test('a silent dictation emits nosound', async () => {
   d.start({ matterId: 1 });
   await d.stop();
   assert.equal(fired, true);
+});
+
+test('dictation prompt carries matter names and legal vocabulary', () => {
+  const acme = { name: 'Acme / Globex Merger' };
+  const { prompt, echoes } = dictationPrompt(acme, { matters: [acme, { name: 'Initech Credit Facility' }] });
+  assert.match(prompt, /^Legal billing notes for Acme \/ Globex Merger\. Terms: /);
+  assert.match(prompt, /disclosure schedules/);
+  assert.match(prompt, /Initech Credit Facility/);
+  assert.deepEqual(echoes, ['Legal billing notes for Acme / Globex Merger.', 'Acme / Globex Merger']);
+  assert.ok(prompt.length <= 900);
+  const custom = dictationPrompt(acme, { vocabulary: 'Hooli, Pied Piper\nearnout' });
+  assert.match(custom.prompt, /Terms: Hooli, Pied Piper, earnout\.$/);
+});
+
+test('a real short dictation that matches a vocabulary word is kept', () => {
+  const { echoes } = dictationPrompt({ name: 'Acme' });
+  assert.equal(dropPromptEcho('Disclosure schedules.', echoes), 'Disclosure schedules.');
+  assert.equal(dropPromptEcho('Acme.', echoes), '');
 });
