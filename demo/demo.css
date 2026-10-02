@@ -18,7 +18,7 @@
 .deck-col { display: grid; gap: 16px; justify-items: start; min-width: 0; }
 
 .neo {
-  --key-size: 72px;
+  --key-size: clamp(72px, 5.6vw, 150px);
   display: grid;
   gap: 12px;
   padding: 18px 18px 14px;
