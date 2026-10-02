@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aiStatus, draftNarrative, normalizeSplit, proposeSplit, suggestCodes } from './ai.js';
+import { aiStatus, draftNarrative, normalizeSplit, proposeSplit, suggestCodes, warmModel } from './ai.js';
 import { codesFor } from './codes.js';
 import { EXPORT_DIR, deepMerge } from './config.js';
 import { dictationPrompt } from './dictation.js';
@@ -71,6 +71,13 @@ export function createServer({
     workspace: workspace?.get() ?? 'real',
   });
   const aiOn = () => getConfig().features?.ai !== false;
+  // Load the model before it's needed: at startup and whenever a timer starts.
+  let warming = null;
+  const warm = () => {
+    if (!aiOn() || warming) return;
+    warming = warmModel(getConfig(), fetchImpl).finally(() => (warming = null));
+  };
+  setTimeout(warm, 0);
   const requireAi = () => {
     if (!aiOn()) throw httpError(403, 'AI drafting is turned off in this edition. Write the narrative directly.');
   };
@@ -98,7 +105,11 @@ export function createServer({
     ['GET', /^\/api\/matters$/, (_, q) => store.listMatters({ includeArchived: q.get('all') === '1' })],
     ['POST', /^\/api\/matters$/, (b) => store.createMatter(b)],
     ['PATCH', /^\/api\/matters\/(\d+)$/, (b, _, [id]) => store.updateMatter(+id, b)],
-    ['POST', /^\/api\/timer\/toggle$/, (b) => store.toggle(+b.matter_id)],
+    ['POST', /^\/api\/timer\/toggle$/, (b) => {
+      const running = store.toggle(+b.matter_id);
+      if (running) warm(); // you'll likely want a draft or codes for this work later
+      return running;
+    }],
     ['POST', /^\/api\/timer\/stop$/, () => store.stop()],
     ['POST', /^\/api\/timer\/next-task$/, (b) => store.nextTask(b.label ? String(b.label) : '')],
     ['POST', /^\/api\/timer\/note$/, (b) => store.addNote(String(b.text ?? ''), b.matter_id ? +b.matter_id : undefined)],

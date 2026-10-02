@@ -65,6 +65,7 @@ export const DEFAULTS = {
     provider: 'ollama',
     baseUrl: 'http://127.0.0.1:11434',
     model: 'gemma3:12b',
+    keepAlive: '4h', // how long Ollama keeps the model loaded after a request (avoids ~15 s reloads)
     // House style the model should follow. Edit freely in Settings.
     styleGuide: [
       'Write in the past tense, starting each task with a verb (e.g., "Reviewed", "Drafted", "Conferred").',
