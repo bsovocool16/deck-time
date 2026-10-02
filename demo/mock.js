@@ -15,6 +15,7 @@
     port: 7331,
     timekeeper: { id: '10001', name: 'Demo Attorney' },
     rounding: { increment: 0.1, mode: 'up', minimum: 0.1 },
+    overnight: { workdayEnds: 0, check: true, checkHour: 5 },
     ai: {
       provider: 'demo',
       baseUrl: 'on this Mac (simulated here)',

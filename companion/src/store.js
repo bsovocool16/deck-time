@@ -96,12 +96,17 @@ const MIGRATIONS = [
   ['entries', 'draft', "TEXT NOT NULL DEFAULT ''"],
   ['matters', 'jurisdiction', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'jurisdiction', "TEXT NOT NULL DEFAULT ''"],
+  ['segments', 'confirmed', 'INTEGER NOT NULL DEFAULT 0'], // overnight check answered
 ];
 
 const round2 = (n) => Math.round(n * 100) / 100;
 
 // Restarting a matter within this long of its last stop continues the same task.
 export const RESUME_WINDOW_MS = 15 * 60_000;
+
+// Overnight check: a timer that ran past midnight with nothing logged for this
+// long before the morning check hour is probably one you forgot to stop.
+export const OVERNIGHT_QUIET_MS = 2 * 3_600_000;
 
 export class Store extends EventEmitter {
   constructor(dbPath, getConfig, now = () => Date.now()) {
@@ -115,6 +120,26 @@ export class Store extends EventEmitter {
     }
     this.getConfig = getConfig;
     this.now = now;
+  }
+
+  /** Hour the workday rolls over (0 = midnight). See time.js. */
+  #rollover() {
+    const h = Number(this.getConfig().overnight?.workdayEnds ?? 0);
+    return Number.isInteger(h) && h >= 0 && h <= 6 ? h : 0;
+  }
+
+  /** The workday a moment belongs to. */
+  dateOf(ms) {
+    return localDate(ms, this.#rollover());
+  }
+
+  today() {
+    return this.dateOf(this.now());
+  }
+
+  /** [start, end) of a workday in ms. */
+  bounds(date) {
+    return dayBounds(date, this.#rollover());
   }
 
   #columns(table) {
@@ -320,8 +345,9 @@ export class Store extends EventEmitter {
   }
 
   #currentTask(matterId, at) {
-    const [start] = dayBounds(localDate(at));
-    const row = this.db.prepare('SELECT MAX(task) AS t FROM segments WHERE matter_id = ? AND start_ms >= ?').get(matterId, start);
+    // Includes a segment still running from before midnight, so tasks keep counting up across the rollover.
+    const [start] = this.bounds(this.dateOf(at));
+    const row = this.db.prepare('SELECT MAX(task) AS t FROM segments WHERE matter_id = ? AND COALESCE(end_ms, ?) > ?').get(matterId, at, start);
     return row?.t ?? 0;
   }
 
@@ -331,9 +357,9 @@ export class Store extends EventEmitter {
    * longer gap it's new work, so it starts a new task.
    */
   #resumeTask(matterId, at) {
-    const [start] = dayBounds(localDate(at));
+    const [start] = this.bounds(this.dateOf(at));
     const last = this.db
-      .prepare('SELECT task, end_ms FROM segments WHERE matter_id = ? AND start_ms >= ? AND end_ms IS NOT NULL ORDER BY end_ms DESC LIMIT 1')
+      .prepare('SELECT task, end_ms FROM segments WHERE matter_id = ? AND end_ms > ? ORDER BY end_ms DESC LIMIT 1')
       .get(matterId, start);
     if (!last) return this.#currentTask(matterId, at);
     return at - last.end_ms <= RESUME_WINDOW_MS ? last.task : this.#currentTask(matterId, at) + 1;
@@ -364,7 +390,7 @@ export class Store extends EventEmitter {
    * task and the notes taken during it.
    */
   taskBlocks(date, matterId) {
-    const [dayStart, dayEnd] = dayBounds(date);
+    const [dayStart, dayEnd] = this.bounds(date);
     const now = this.now();
     const segs = this.segmentsForDay(date).filter((s) => s.matter_id === matterId);
     const blocks = new Map();
@@ -419,7 +445,7 @@ export class Store extends EventEmitter {
     if (!id) throw httpError(400, 'No timer running');
     const clean = text.trim();
     if (!clean) throw httpError(400, 'Note is empty');
-    const date = localDate(ts);
+    const date = this.dateOf(ts);
     this.db.prepare('INSERT INTO note_events (date, matter_id, ts, text, source) VALUES (?, ?, ?, ?, ?)').run(date, id, ts, clean, source);
     const entry = this.getEntry(date, id);
     const notes = entry.notes ? `${entry.notes}; ${clean}` : clean;
@@ -434,7 +460,7 @@ export class Store extends EventEmitter {
   }
 
   segmentsForDay(date) {
-    const [start, end] = dayBounds(date);
+    const [start, end] = this.bounds(date);
     const now = this.now();
     return this.db
       .prepare('SELECT * FROM segments WHERE start_ms < ? AND COALESCE(end_ms, ?) > ? ORDER BY start_ms')
@@ -562,7 +588,7 @@ export class Store extends EventEmitter {
 
   /** Everything for one day: entries (all parts) for every matter with time or a saved entry. */
   day(date) {
-    const [start, end] = dayBounds(date);
+    const [start, end] = this.bounds(date);
     const now = this.now();
     const rounding = this.getConfig().rounding;
     const rawByMatter = new Map();
@@ -623,11 +649,68 @@ export class Store extends EventEmitter {
       .map(plain);
   }
 
+  // ---------- overnight check ----------
+
+  /**
+   * A timer that started before midnight and was still going at the morning
+   * check hour, with nothing logged on it for a couple of hours: probably
+   * left running overnight. Asked once per timer; otherwise time that crosses
+   * midnight simply lands on each day it was worked (or on the day it started,
+   * with a later workday rollover). Returns null when there's nothing to ask.
+   */
+  overnight() {
+    const cfg = { check: true, checkHour: 5, ...this.getConfig().overnight };
+    if (!cfg.check) return null;
+    const now = this.now();
+    const rows = this.db
+      .prepare('SELECT * FROM segments WHERE confirmed = 0 AND start_ms > ? AND COALESCE(end_ms, ?) > ? ORDER BY start_ms')
+      .all(now - 2 * 86_400_000, now, now - 86_400_000)
+      .map(plain);
+    for (const s of rows) {
+      const started = new Date(s.start_ms);
+      const checkAt = new Date(started.getFullYear(), started.getMonth(), started.getDate() + 1, cfg.checkHour).getTime();
+      const end = s.end_ms ?? now;
+      if (end < checkAt) continue;
+      const last = this.db
+        .prepare('SELECT ts, text FROM note_events WHERE matter_id = ? AND ts >= ? AND ts <= ? ORDER BY ts DESC LIMIT 1')
+        .get(s.matter_id, s.start_ms, end);
+      const lastActivity = Math.max(s.start_ms, last?.ts ?? 0);
+      if (checkAt - lastActivity < OVERNIGHT_QUIET_MS) continue; // you were logging work into the small hours
+      const midnight = new Date(started.getFullYear(), started.getMonth(), started.getDate() + 1).getTime();
+      return {
+        segment_id: s.id,
+        matter: this.getMatter(s.matter_id),
+        start_ms: s.start_ms,
+        end_ms: s.end_ms, // null while it's still running
+        running: s.end_ms == null,
+        midnight_ms: midnight,
+        last_note: last ? { ts: last.ts, text: last.text } : null,
+      };
+    }
+    return null;
+  }
+
+  /** Answer the overnight check: keep the time, or end the timer at a given moment. */
+  resolveOvernight(segmentId, { action, end_ms } = {}) {
+    const seg = this.db.prepare('SELECT * FROM segments WHERE id = ?').get(segmentId);
+    if (!seg) throw httpError(404, 'Timer not found');
+    if (action === 'keep') {
+      this.db.prepare('UPDATE segments SET confirmed = 1 WHERE id = ?').run(segmentId);
+    } else if (action === 'end') {
+      const limit = seg.end_ms ?? this.now();
+      const at = Number(end_ms);
+      if (!(at > seg.start_ms) || at > limit) throw httpError(400, 'Choose a time between when the timer started and now');
+      this.db.prepare('UPDATE segments SET end_ms = ?, confirmed = 1 WHERE id = ?').run(Math.round(at), segmentId);
+    } else throw httpError(400, "action must be 'keep' or 'end'");
+    this.emitChange();
+    return { ok: true };
+  }
+
   // ---------- state snapshot for UI / Stream Deck ----------
 
   state() {
     const running = this.running();
-    const today = localDate(this.now());
+    const today = this.today();
     const { entries, total_hours } = this.day(today);
     const todayMs = Object.fromEntries(entries.filter((e) => e.part === 0).map((e) => [e.matter_id, e.raw_ms]));
     return {
@@ -639,6 +722,7 @@ export class Store extends EventEmitter {
         : null,
       matters: this.listMatters().map((m) => ({ ...m, today_ms: todayMs[m.id] ?? 0 })),
       deck: this.deck(),
+      overnight: this.overnight(),
     };
   }
 

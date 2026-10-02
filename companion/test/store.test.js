@@ -335,3 +335,139 @@ test('jurisdiction: entry overrides matter, matter overrides the export default'
   store.updateEntry('2026-09-29', a.id, { jurisdiction: '' });
   assert.equal(parseTim(toTim(store.day('2026-09-29').entries, cfg)).find((r) => r.cl === '1').u1, '012');
 });
+
+// ---------- midnight ----------
+
+function setupWith(overnight) {
+  let t = new Date(2026, 8, 29, 9, 0).getTime();
+  const clock = { now: () => t, set: (ms) => (t = ms) };
+  const cfg = { ...DEFAULTS, overnight: { ...DEFAULTS.overnight, ...overnight } };
+  return { store: new Store(':memory:', () => cfg, clock.now), clock };
+}
+const at = (d, h, m = 0) => new Date(2026, 8, d, h, m).getTime();
+
+test('midnight: a running timer stays one segment, state() moves to the new day, notes land on it', () => {
+  const { store, clock } = setupWith({});
+  const a = store.createMatter({ name: 'Late Night' });
+  clock.set(at(29, 23, 0));
+  store.toggle(a.id);
+  clock.set(at(30, 0, 30));
+  const s = store.state();
+  assert.equal(s.today, '2026-09-30');
+  assert.equal(s.running.start_ms, at(29, 23, 0)); // the clock on the key keeps counting from 11 PM
+  assert.equal(s.matters[0].today_ms, 30 * MIN); // today's hours restart at midnight
+  assert.equal(store.day('2026-09-29').entries[0].hours, 1);
+  store.addNote('rev SPA draft', a.id);
+  assert.equal(store.getEntry('2026-09-30', a.id).notes, 'rev SPA draft');
+  assert.equal(store.getEntry('2026-09-29', a.id).notes, '');
+});
+
+test('midnight: Next task after midnight keeps counting up from the task that crossed it', () => {
+  const { store, clock } = setupWith({});
+  const a = store.createMatter({ name: 'Late Night' });
+  clock.set(at(29, 22, 0));
+  store.toggle(a.id);
+  clock.set(at(29, 23, 0));
+  store.nextTask(); // task 1, running at midnight
+  clock.set(at(30, 0, 40));
+  const next = store.nextTask();
+  assert.equal(next.task, 2);
+  const blocks = store.taskBlocks('2026-09-30', a.id);
+  assert.deepEqual(blocks.map((b) => [b.task, b.ms]), [[1, 40 * MIN], [2, 0]]);
+});
+
+test('midnight: stopping and restarting just after midnight resumes the same task', () => {
+  const { store, clock } = setupWith({});
+  const a = store.createMatter({ name: 'Late Night' });
+  clock.set(at(29, 23, 50));
+  store.toggle(a.id);
+  clock.set(at(30, 0, 5));
+  store.toggle(a.id);
+  clock.set(at(30, 0, 10));
+  assert.equal(store.toggle(a.id).task, 0);
+});
+
+test('midnight: with a 4 AM workday rollover, late-night time stays on the day it started', () => {
+  const { store, clock } = setupWith({ workdayEnds: 4 });
+  const a = store.createMatter({ name: 'Late Night' });
+  clock.set(at(29, 23, 0));
+  store.toggle(a.id);
+  clock.set(at(30, 1, 30));
+  assert.equal(store.today(), '2026-09-29');
+  store.addNote('finished brief', a.id);
+  store.toggle(a.id);
+  assert.equal(store.day('2026-09-29').entries[0].hours, 2.5);
+  assert.equal(store.day('2026-09-29').entries[0].notes, 'finished brief');
+  assert.equal(store.day('2026-09-30').entries.length, 0);
+  clock.set(at(30, 9, 0));
+  assert.equal(store.today(), '2026-09-30');
+});
+
+test('overnight check: asks about a timer left running into the morning, once', () => {
+  const { store, clock } = setupWith({});
+  const a = store.createMatter({ name: 'Forgotten' });
+  clock.set(at(29, 22, 15));
+  store.toggle(a.id);
+  store.addNote('last thing', a.id);
+  clock.set(at(30, 4, 59));
+  assert.equal(store.overnight(), null); // not morning yet
+  clock.set(at(30, 7, 30));
+  const o = store.state().overnight;
+  assert.equal(o.matter.name, 'Forgotten');
+  assert.equal(o.running, true);
+  assert.equal(o.midnight_ms, at(30, 0, 0));
+  store.resolveOvernight(o.segment_id, { action: 'end', end_ms: at(29, 23, 40) });
+  assert.equal(store.running(), null);
+  assert.equal(store.day('2026-09-29').entries[0].hours, 1.5); // 22:15–23:40, rounded up
+  assert.equal(store.day('2026-09-30').entries.length, 0);
+  assert.equal(store.overnight(), null);
+});
+
+test('overnight check: no question if you were working, chose to keep it, or turned it off', () => {
+  // Notes logged into the small hours: you were working.
+  let { store, clock } = setupWith({});
+  const a = store.createMatter({ name: 'All-nighter' });
+  clock.set(at(29, 22, 0));
+  store.toggle(a.id);
+  clock.set(at(30, 4, 0));
+  store.addNote('signing pages out', a.id);
+  clock.set(at(30, 6, 0));
+  assert.equal(store.overnight(), null);
+
+  // Kept once: never asked again, even after it's stopped.
+  ({ store, clock } = setupWith({}));
+  const b = store.createMatter({ name: 'Kept' });
+  clock.set(at(29, 22, 0));
+  store.toggle(b.id);
+  clock.set(at(30, 6, 0));
+  store.resolveOvernight(store.overnight().segment_id, { action: 'keep' });
+  assert.equal(store.running().matter_id, b.id);
+  clock.set(at(30, 9, 0));
+  store.stop();
+  assert.equal(store.overnight(), null);
+
+  // Stopped from the deck in the morning without answering: still asked, so the hours can be fixed.
+  ({ store, clock } = setupWith({}));
+  const c = store.createMatter({ name: 'Stopped' });
+  clock.set(at(29, 22, 0));
+  store.toggle(c.id);
+  clock.set(at(30, 8, 0));
+  store.stop();
+  assert.equal(store.overnight().running, false);
+  assert.throws(() => store.resolveOvernight(store.overnight().segment_id, { action: 'end', end_ms: at(30, 9, 0) }), /between/);
+
+  // Turned off.
+  ({ store, clock } = setupWith({ check: false }));
+  const d = store.createMatter({ name: 'Off' });
+  clock.set(at(29, 22, 0));
+  store.toggle(d.id);
+  clock.set(at(30, 8, 0));
+  assert.equal(store.overnight(), null);
+});
+
+test('dayBounds and localDate honor a workday rollover hour', async () => {
+  const { localDate } = await import('../src/time.js');
+  assert.equal(localDate(at(30, 3, 59), 4), '2026-09-29');
+  assert.equal(localDate(at(30, 4, 0), 4), '2026-09-30');
+  assert.deepEqual(dayBounds('2026-09-29', 4), [at(29, 4), at(30, 4)]);
+});

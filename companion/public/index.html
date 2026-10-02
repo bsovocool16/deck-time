@@ -52,6 +52,20 @@
     </div>
   </section>
 
+  <div id="overnight" class="overnight" role="alertdialog" aria-modal="true" aria-labelledby="overnight-title" aria-describedby="overnight-text" hidden>
+    <div class="overnight-card">
+      <h2 id="overnight-title">Did this timer run overnight?</h2>
+      <p id="overnight-text"></p>
+      <p id="overnight-last" class="overnight-last" hidden></p>
+      <div id="overnight-options" class="overnight-options"></div>
+      <div class="overnight-custom">
+        <label>Stopped at <input type="time" id="overnight-time"></label>
+        <button type="button" id="overnight-set">Stop then</button>
+      </div>
+      <button type="button" id="overnight-keep" class="quiet overnight-keep">Keep it</button>
+    </div>
+  </div>
+
   <main class="wrap">
     <!-- TODAY -->
     <section data-panel="today" class="panel">
@@ -197,6 +211,32 @@
         <label>Increment (hours) <input name="rounding.increment" type="number" step="0.05" min="0.05"></label>
         <label>Mode <select name="rounding.mode"><option value="up">Round up</option><option value="nearest">Nearest</option></select></label>
         <label>Minimum (hours) <input name="rounding.minimum" type="number" step="0.05" min="0"></label>
+
+        <h3>Late nights</h3>
+        <label>Time after midnight
+          <select name="overnight.workdayEnds" data-type="number">
+            <option value="0">Stays on the day worked</option>
+            <option value="2">Previous day until 2 AM</option>
+            <option value="4">Previous day until 4 AM</option>
+            <option value="6">Previous day until 6 AM</option>
+          </select>
+        </label>
+        <label>Forgotten timer check
+          <select name="overnight.check" data-type="bool">
+            <option value="true">Ask</option>
+            <option value="false">Never</option>
+          </select>
+        </label>
+        <label>Ask after
+          <select name="overnight.checkHour" data-type="number">
+            <option value="4">4:00 AM</option>
+            <option value="5">5:00 AM</option>
+            <option value="6">6:00 AM</option>
+            <option value="7">7:00 AM</option>
+            <option value="8">8:00 AM</option>
+          </select>
+        </label>
+        <p class="wide settings-note">Working past midnight needs no answer. The timer keeps running and the time is split at midnight onto each day, or kept on the day you started if you choose that above. deck-time only asks once, if a timer from last night is still going in the morning and nothing was logged on it for two hours before then.</p>
 
         <h3>Phrasebook <span id="phrasebook-status" class="status"></span></h3>
         <p class="wide settings-note">Drafts are instant and use no AI model: shorthand is expanded, verbs go into the past tense, and actions are joined. Teach it your own shorthand below. It also learns from you automatically: when you export, every change you made to a draft is remembered for that matter right away, and everywhere once you've made it twice. Recent corrections count more than old ones.</p>

@@ -67,7 +67,11 @@ const clientMatter = (m) => [m.client_no, m.matter_no].filter(Boolean).join('-')
 function connect() {
   const es = new EventSource('/api/events');
   es.onmessage = (ev) => {
+    const prevToday = state?.today;
     state = JSON.parse(ev.data);
+    // Past midnight (or the workday rollover): if you were looking at today, follow it to the new day.
+    if (prevToday && state.today !== prevToday && day === prevToday) setDay(state.today);
+    renderOvernight();
     renderRunning();
     renderDeck();
     renderSidebar();
@@ -241,6 +245,73 @@ function setTheme(t) {
 }
 $('#theme-toggle').addEventListener('click', () => setTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]));
 setTheme(currentTheme());
+
+// ---------- overnight check ----------
+
+/**
+ * A timer from last night that was still going this morning with nothing
+ * logged on it. Ask once: keep it, or stop it when you actually stopped.
+ * (Time that crosses midnight otherwise needs no answer: it lands on each day
+ * it was worked, or on the day you started; see Settings → Late nights.)
+ */
+function renderOvernight() {
+  const o = state.overnight;
+  const box = $('#overnight');
+  if (!o) {
+    box.hidden = true;
+    renderOvernight.shown = null;
+    return;
+  }
+  if (renderOvernight.shown === o.segment_id && !box.hidden) {
+    $('#overnight-elapsed').textContent = span((o.end_ms ?? state.now) - o.start_ms);
+    return;
+  }
+  renderOvernight.shown = o.segment_id;
+  const name = o.matter.label || o.matter.name;
+  const when = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const startDay = new Date(o.start_ms).toLocaleDateString(undefined, { weekday: 'long' });
+  $('#overnight-text').innerHTML = `Your <strong>${esc(name)}</strong> timer started at ${esc(when(o.start_ms))} ${esc(startDay)} and ${o.running ? 'is still running' : `ran until ${esc(when(o.end_ms))}`}: <strong id="overnight-elapsed">${span((o.end_ms ?? state.now) - o.start_ms)}</strong>.`;
+  const options = [];
+  if (o.last_note && o.last_note.ts > o.start_ms) {
+    options.push(`<button class="primary" data-overnight-end="${o.last_note.ts + 60_000}">Stop at ${esc(when(o.last_note.ts + 60_000))} <small>after your last note</small></button>`);
+  }
+  options.push(`<button class="${options.length ? '' : 'primary'}" data-overnight-end="${o.midnight_ms}">Stop at midnight</button>`);
+  $('#overnight-options').innerHTML = options.join('');
+  $('#overnight-time').value = hhmm(o.last_note?.ts > o.start_ms ? o.last_note.ts : o.midnight_ms);
+  $('#overnight-keep').textContent = o.running ? 'I’m still working: keep it' : 'I worked all of it: keep it';
+  if (o.last_note) $('#overnight-last').textContent = `Last note ${when(o.last_note.ts)}: “${o.last_note.text}”`;
+  $('#overnight-last').hidden = !o.last_note;
+  box.hidden = false;
+}
+
+function span(ms) {
+  const m = Math.round(ms / 60000);
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+async function resolveOvernight(body) {
+  const o = state.overnight;
+  if (!o) return;
+  await api(`/api/timer/overnight/${o.segment_id}`, { method: 'POST', body });
+  $('#overnight').hidden = true;
+  toast(body.action === 'keep' ? 'Kept: no more questions about this timer' : `Stopped at ${new Date(body.end_ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
+  refreshDay(true);
+}
+$('#overnight').addEventListener('click', guard(async (ev) => {
+  const t = ev.target.closest('button');
+  if (!t) return;
+  if (t.dataset.overnightEnd) return resolveOvernight({ action: 'end', end_ms: +t.dataset.overnightEnd });
+  if (t.id === 'overnight-keep') return resolveOvernight({ action: 'keep' });
+  if (t.id === 'overnight-set') {
+    const o = state.overnight;
+    const v = $('#overnight-time').value;
+    if (!v) return toast('Pick the time you stopped', true);
+    // The chosen time on the night it started, or the next morning (whichever falls inside the timer).
+    let at = timeNear(v, o.start_ms);
+    if (at <= o.start_ms) at = timeNear(v, o.midnight_ms);
+    return resolveOvernight({ action: 'end', end_ms: at });
+  }
+}));
 
 // ---------- dictated notes ----------
 
@@ -567,11 +638,11 @@ function renderSegments(segs) {
     segs
       .map((s) => {
         const end = s.end_ms ?? state.now;
-        return `<tr data-seg="${s.id}" data-start="${s.start_ms}">
+        return `<tr data-seg="${s.id}" data-start="${s.start_ms}" data-end="${s.end_ms ?? ''}">
         <td>${esc(byId[s.matter_id]?.name ?? `#${s.matter_id}`)}</td>
         <td>${s.task + 1}</td>
-        <td><input type="time" name="start" value="${hhmm(s.start_ms)}"></td>
-        <td>${s.end_ms ? `<input type="time" name="end" value="${hhmm(s.end_ms)}">` : '<span class="live-badge">running</span>'}</td>
+        <td><input type="time" name="start" value="${hhmm(s.start_ms)}">${dayTag(s.start_ms)}</td>
+        <td>${s.end_ms ? `<input type="time" name="end" value="${hhmm(s.end_ms)}">${dayTag(s.end_ms)}` : '<span class="live-badge">running</span>'}</td>
         <td>${Math.round((end - s.start_ms) / 60000)}</td>
         <td><button class="danger" data-action="del-seg">Delete</button></td>
       </tr>`;
@@ -583,11 +654,30 @@ function renderMatterOptions() {
   $('#add-segment select').innerHTML = state.matters.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join('');
 }
 
-// Time input on the viewed day -> epoch ms
+// Time input on the viewed day -> epoch ms. With a later workday rollover
+// (Settings → Late nights), times before it fall on the next calendar morning.
 function timeOnDay(hm) {
   const [y, mo, d] = day.split('-').map(Number);
   const [h, mi] = hm.split(':').map(Number);
-  return new Date(y, mo - 1, d, h, mi).getTime();
+  return new Date(y, mo - 1, d + (h < rolloverHour() ? 1 : 0), h, mi).getTime();
+}
+
+// Time input on the same calendar date as an existing time (a segment that
+// crosses midnight keeps its own dates when you edit either end).
+function timeNear(hm, ref) {
+  const r = new Date(ref);
+  const [h, mi] = hm.split(':').map(Number);
+  return new Date(r.getFullYear(), r.getMonth(), r.getDate(), h, mi).getTime();
+}
+
+const rolloverHour = () => Number(config?.overnight?.workdayEnds) || 0;
+
+// "(Mon)"-style tag when a segment time isn't on the day being viewed.
+function dayTag(ms) {
+  const [y, mo, d] = day.split('-').map(Number);
+  const cal = new Date(ms);
+  const same = cal.getFullYear() === y && cal.getMonth() === mo - 1 && cal.getDate() === d;
+  return same ? '' : ` <small class="day-tag">${cal.toLocaleDateString(undefined, { weekday: 'short' })}</small>`;
 }
 
 // ---------- matters tab ----------
@@ -845,7 +935,8 @@ document.addEventListener('change', guard(async (ev) => {
   const seg = el.closest('[data-seg]');
   if (seg) {
     const field = el.name === 'start' ? 'start_ms' : 'end_ms';
-    await api(`/api/segments/${seg.dataset.seg}`, { method: 'PATCH', body: { [field]: timeOnDay(el.value) } });
+    const ref = +(el.name === 'start' ? seg.dataset.start : seg.dataset.end);
+    await api(`/api/segments/${seg.dataset.seg}`, { method: 'PATCH', body: { [field]: ref ? timeNear(el.value, ref) : timeOnDay(el.value) } });
     return refreshDay(true);
   }
 }));
@@ -924,10 +1015,10 @@ $('#export-csv').addEventListener('click', guard(() => doExport('csv')));
 $('#add-segment').addEventListener('submit', guard(async (ev) => {
   ev.preventDefault();
   const f = ev.target;
-  await api('/api/segments', {
-    method: 'POST',
-    body: { matter_id: +f.matter_id.value, start_ms: timeOnDay(f.start.value), end_ms: timeOnDay(f.end.value) },
-  });
+  const start = timeOnDay(f.start.value);
+  let end = timeOnDay(f.end.value);
+  if (end <= start) end += 86_400_000; // 11:30 PM to 1:15 AM: ends the next morning
+  await api('/api/segments', { method: 'POST', body: { matter_id: +f.matter_id.value, start_ms: start, end_ms: end } });
   f.reset();
   renderMatterOptions();
   refreshDay(true);
@@ -951,7 +1042,8 @@ $('#settings-form').addEventListener('submit', guard(async (ev) => {
   for (const el of ev.target.elements) {
     if (!el.name) continue;
     let v = el.value;
-    if (el.type === 'number') v = +v;
+    if (el.type === 'number' || el.dataset.type === 'number') v = +v;
+    if (el.dataset.type === 'bool') v = v === 'true';
     if (el.name === 'tim.defaults') v = parseKeyValues(v);
     setPath(next, el.name, v);
   }

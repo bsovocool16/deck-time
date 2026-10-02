@@ -155,6 +155,12 @@ about a millisecond, and they never add facts that aren't in your notes:
 The design principle: no model in the click path. A model can later act as an
 offline teacher that reviews accumulated corrections and proposes rules.
 
+## Late nights (midnight rollover)
+
+You don't have to answer anything when you work past midnight. The timer keeps running, and the time is split at midnight: each day gets the hours worked on it, and notes go to the day they were taken. If you'd rather keep late-night time on the day you started, set **Settings → Late nights → Time after midnight** to "Previous day until 2/4/6 AM". The workday then rolls over at that hour.
+
+The one question it asks: if a timer from last night is still running at the check hour (5 AM by default), and nothing was logged on it for two hours before then, deck-time asks once whether you forgot it. You can stop it a minute after your last note, at midnight, or at a time you pick. Or you can keep it all. Until you answer, the Neo info bar reads "Overnight timer?". You can change the hour or turn the check off in the same Settings section.
+
 ## Client billing rules & block billing
 
 **Matters → Client billing rules** remembers instructions per client number:

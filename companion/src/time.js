@@ -2,15 +2,20 @@
 
 const pad = (n) => String(n).padStart(2, '0');
 
-export function localDate(ms = Date.now()) {
-  const d = new Date(ms);
+// A workday normally ends at midnight. With `rollover` set (an hour, e.g. 4),
+// time before that hour counts toward the previous day, so a late night stays
+// on the day it started.
+
+export function localDate(ms = Date.now(), rollover = 0) {
+  const t = new Date(ms);
+  const d = t.getHours() < rollover ? new Date(t.getFullYear(), t.getMonth(), t.getDate() - 1) : t;
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-export function dayBounds(date) {
+export function dayBounds(date, rollover = 0) {
   const [y, m, d] = date.split('-').map(Number);
-  const start = new Date(y, m - 1, d).getTime();
-  const end = new Date(y, m - 1, d + 1).getTime(); // DST-safe: next local midnight
+  const start = new Date(y, m - 1, d, rollover).getTime();
+  const end = new Date(y, m - 1, d + 1, rollover).getTime(); // DST-safe: next local midnight (or rollover hour)
   return [start, end];
 }
 

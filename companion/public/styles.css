@@ -382,6 +382,17 @@ label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap;
 .mic-setup ol { padding-left: 20px; display: grid; gap: 4px; }
 .mic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .mic-result { color: var(--live); font-size: 13px; }
+.overnight { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: color-mix(in srgb, var(--ink) 35%, transparent); }
+.overnight-card { width: min(520px, 100%); background: var(--sheet); border: 1px solid var(--rule); border-left: 3px solid var(--focus); border-radius: 6px; padding: 20px 22px; display: grid; gap: 12px; box-shadow: 0 12px 40px rgb(0 0 0 / 0.25); }
+.overnight-card h2 { margin: 0; color: var(--ink); }
+.overnight-card p { margin: 0; color: var(--ink-2); line-height: 1.5; }
+.overnight-last { font-size: 0.9em; overflow-wrap: anywhere; }
+.overnight-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.overnight-options small { opacity: 0.75; margin-left: 4px; }
+.overnight-custom { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.overnight-custom label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.overnight-keep { justify-self: start; }
+.day-tag { color: var(--ink-2); margin-left: 4px; }
 .mic-setup { transition: opacity 0.35s ease, transform 0.35s ease; }
 .mic-setup.collapsing { opacity: 0; transform: translateY(-6px); }
 @media (prefers-reduced-motion: reduce) { .mic-setup { transition: none; } }

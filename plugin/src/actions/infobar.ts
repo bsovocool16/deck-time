@@ -2,7 +2,7 @@ import { action, SingletonAction, type WillAppearEvent } from "@elgato/streamdec
 import { companion } from "../companion";
 import { clock } from "../render";
 
-/** Stream Deck Neo info bar: running matter + elapsed time, or today's total. */
+/** Stream Deck Neo info bar: running matter + elapsed time, or today's total (or a nudge to answer the overnight check). */
 @action({ UUID: "com.bsovocool.decktime.infobar" })
 export class Infobar extends SingletonAction {
 	#last = "";
@@ -23,6 +23,7 @@ export class Infobar extends SingletonAction {
 		const s = companion.state;
 		let feedback: { title: string; value: string };
 		if (!companion.online || !s) feedback = { title: "deck-time", value: "offline" };
+		else if (s.overnight) feedback = { title: "Overnight timer?", value: "check app" };
 		else if (s.running) feedback = { title: s.running.matter.label || s.running.matter.name, value: clock(s.now - s.running.start_ms) };
 		else feedback = { title: "No timer running", value: `${s.total_hours.toFixed(1)}h today` };
 		const key = JSON.stringify(feedback);

@@ -18,6 +18,7 @@ export type State = {
 	today: string;
 	total_hours: number;
 	running: { id: number; matter_id: number; start_ms: number; task: number; tasks_today: number; matter: Matter } | null;
+	overnight?: { segment_id: number; running: boolean; matter: Matter } | null; // a timer left running overnight, awaiting an answer in the app
 	matters: Matter[];
 	dictation: { status: "idle" | "recording" | "transcribing"; error: string | null; started_at: number | null } | null;
 	deck: { slot: number; kind: "matter" | "dictate" | "next-task" | "stop" | "review" | "empty" | "none"; matter_id: number | null; fixed?: boolean }[];

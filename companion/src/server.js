@@ -12,7 +12,7 @@ import { EXPORT_DIR, deepMerge } from './config.js';
 import { dictationPrompt } from './dictation.js';
 import { exportable, learnFromTim, parseTim, toCsv, toTim, validateForTim } from './export.js';
 import { httpError } from './store.js';
-import { isDate, localDate } from './time.js';
+import { isDate } from './time.js';
 
 const DEMO_TIMEKEEPER = { id: '10001', name: 'Demo Attorney' };
 const DEFAULT_PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -117,9 +117,10 @@ export function createServer({
     ['POST', /^\/api\/timer\/toggle$/, (b) => store.toggle(+b.matter_id)],
     ['POST', /^\/api\/timer\/stop$/, () => store.stop()],
     ['POST', /^\/api\/timer\/next-task$/, (b) => store.nextTask(b.label ? String(b.label) : '')],
+    ['POST', /^\/api\/timer\/overnight\/(\d+)$/, (b, _, [id]) => store.resolveOvernight(+id, b)],
     ['POST', /^\/api\/timer\/note$/, (b) => store.addNote(String(b.text ?? ''), b.matter_id ? +b.matter_id : undefined)],
-    ['GET', /^\/api\/day$/, (_, q) => store.day(dateParam(q))],
-    ['GET', /^\/api\/segments$/, (_, q) => store.segmentsForDay(dateParam(q))],
+    ['GET', /^\/api\/day$/, (_, q) => store.day(dateParam(q, store))],
+    ['GET', /^\/api\/segments$/, (_, q) => store.segmentsForDay(dateParam(q, store))],
     ['POST', /^\/api\/segments$/, (b) => store.addSegment(b)],
     ['PATCH', /^\/api\/segments\/(\d+)$/, (b, _, [id]) => store.updateSegment(+id, b)],
     ['DELETE', /^\/api\/segments\/(\d+)$/, (_, __, [id]) => store.deleteSegment(+id)],
@@ -341,8 +342,8 @@ function openMicrophoneSettings() {
   return { ok: true };
 }
 
-function dateParam(q) {
-  const date = q.get('date') || localDate();
+function dateParam(q, store) {
+  const date = q.get('date') || store.today();
   if (!isDate(date)) throw httpError(400, 'date must be YYYY-MM-DD');
   return date;
 }

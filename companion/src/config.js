@@ -60,6 +60,15 @@ export const DEFAULTS = {
     id: '',
     name: '',
   },
+  // Timers that run past midnight. Time is split at midnight onto each day it
+  // was worked; set workdayEnds to an hour (1-6) to count late-night time
+  // toward the day you started instead. The check asks once if a timer from
+  // last night was still running at checkHour with nothing logged on it.
+  overnight: {
+    workdayEnds: 0, // 0 = midnight
+    check: true,
+    checkHour: 5, // 5:00 AM
+  },
   rounding: {
     increment: 0.1, // hours
     mode: 'up', // 'up' | 'nearest'
