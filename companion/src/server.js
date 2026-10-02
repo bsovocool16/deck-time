@@ -13,6 +13,7 @@ import { dictationPrompt } from './dictation.js';
 import { exportable, learnFromTim, parseTim, toCsv, toTim, validateForTim } from './export.js';
 import { httpError } from './store.js';
 import { isDate } from './time.js';
+import { browserOf, raise } from './window.js';
 
 const DEMO_TIMEKEEPER = { id: '10001', name: 'Demo Attorney' };
 const DEFAULT_PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -36,8 +37,10 @@ export function createServer({
   workspace = null, // { get(), set(name), resetDemo() } when real/demo switching is available
   coder = new CodeMemory(), // learned task/activity codes (see coder.js)
   phrasebook = new Phrasebook(), // learned phrasing for the instant drafter (see phrasebook.js)
+  raiseWindow = raise, // brings the open deck-time page forward (see window.js)
 }) {
   const clients = new Set();
+  const pages = new Map(); // SSE response -> { display, browser, at }: how each open page is running
   // What the Stream Deck plugin reports is actually on each key (in memory; the
   // plugin re-sends after reconnecting). null until a deck reports in.
   let physical = null;
@@ -74,6 +77,7 @@ export function createServer({
     dictation: dictation?.snapshot() ?? null,
     mic_verified: !!dictation && getConfig().dictation?.verified === true,
     workspace: workspace?.get() ?? 'real',
+    daily_target: Number(getConfig().dailyTarget) || 0,
   });
   const matterKey = (m) => [m.client_no, m.matter_no].filter(Boolean).join('.');
   /** Instant codes for an entry: learned from your history, else keyword rules. No AI. */
@@ -117,6 +121,15 @@ export function createServer({
     ['POST', /^\/api\/timer\/toggle$/, (b) => store.toggle(+b.matter_id)],
     ['POST', /^\/api\/timer\/stop$/, () => store.stop()],
     ['POST', /^\/api\/timer\/next-task$/, (b) => store.nextTask(b.label ? String(b.label) : '')],
+    // Review key: show the day in the page you already have open (installed app or browser tab)
+    // rather than a new window in the default browser. { shown: false } = nothing open; the
+    // plugin then opens the address itself.
+    ['POST', /^\/api\/app\/show$/, async (b) => {
+      const latest = [...pages.values()].sort((x, y) => y.at - x.at)[0] ?? null;
+      for (const res of pages.keys()) res.write(`event: show\ndata: ${JSON.stringify({ view: String(b.view ?? 'review') })}\n\n`);
+      const raised = await raiseWindow(latest, `http://127.0.0.1:${getConfig().port}`);
+      return { shown: !!latest || raised, raised };
+    }],
     ['POST', /^\/api\/timer\/overnight\/(\d+)$/, (b, _, [id]) => store.resolveOvernight(+id, b)],
     ['POST', /^\/api\/timer\/note$/, (b) => store.addNote(String(b.text ?? ''), b.matter_id ? +b.matter_id : undefined)],
     ['GET', /^\/api\/day$/, (_, q) => store.day(dateParam(q, store))],
@@ -303,7 +316,11 @@ export function createServer({
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write(`data: ${JSON.stringify(fullState())}\n\n`);
         clients.add(res);
-        req.on('close', () => clients.delete(res));
+        pages.set(res, { display: url.searchParams.get('display') === 'standalone' ? 'standalone' : 'browser', browser: browserOf(req.headers['user-agent']), at: Date.now() });
+        req.on('close', () => {
+          clients.delete(res);
+          pages.delete(res);
+        });
         return;
       }
 

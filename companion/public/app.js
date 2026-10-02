@@ -65,7 +65,15 @@ const clientMatter = (m) => [m.client_no, m.matter_no].filter(Boolean).join('-')
 // ---------- live state (SSE) ----------
 
 function connect() {
-  const es = new EventSource('/api/events');
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const es = new EventSource(`/api/events${standalone ? '?display=standalone' : ''}`);
+  // Review key on the Stream Deck: show today's entries here.
+  es.addEventListener('show', () => {
+    showTab('today');
+    if (day !== state?.today && state) setDay(state.today);
+    window.focus();
+    $('#entries').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
   es.onmessage = (ev) => {
     const prevToday = state?.today;
     state = JSON.parse(ev.data);
@@ -112,8 +120,16 @@ function renderRunning() {
     if (renderRunning.lastNoteAt !== undefined) showDictatedNote(d.last);
     renderRunning.lastNoteAt = d.last.at;
   } else if (!d?.last && renderRunning.lastNoteAt === undefined) renderRunning.lastNoteAt = null;
-  $('#total').textContent = `${state.total_hours.toFixed(1)} h today`;
-  document.title = r ? `${clock(state.now - r.start_ms)} · ${r.matter.label || r.matter.name}` : 'deck-time';
+  const target = state.daily_target;
+  $('#total').textContent = target ? `${state.total_hours.toFixed(1)} of ${target} h` : `${state.total_hours.toFixed(1)} h today`;
+  $('#target').hidden = !target;
+  if (target) {
+    const pct = Math.min(100, (state.total_hours / target) * 100);
+    $('#target-fill').style.width = `${pct}%`;
+    $('#target').classList.toggle('met', state.total_hours >= target);
+    $('#target').title = `${Math.round(pct)}% of your ${target}-hour day`;
+  }
+  document.title = r ? `${clock(state.now - r.start_ms)} · ${r.matter.label || r.matter.name} · deck-time` : 'deck-time';
 }
 
 // ---------- Stream Deck keys + sidebar ----------
@@ -724,7 +740,7 @@ async function renderMatters() {
       (m) => `<tr data-id="${m.id}" style="${m.archived ? 'opacity:.5' : ''}">
       <td><span class="swatch" style="background:${esc(m.color)}"></span></td>
       <td>${esc(m.name)}</td><td>${esc(m.label)}</td><td>${esc(clientMatter(m))}</td>
-      <td>${m.code_set ? esc([config?.codes.taskSets[m.code_set]?.label ?? m.code_set, m.task_code, m.activity_code].filter(Boolean).join(' · ')) : '<span style="opacity:.5">none</span>'}</td>
+      <td><select class="code-set" data-codeset="${m.id}" aria-label="Task/activity codes for ${esc(m.name)}">${codeSetOptions(m.code_set)}</select>${m.code_set && (m.task_code || m.activity_code) ? ` <small>${esc([m.task_code, m.activity_code].filter(Boolean).join(' · '))}</small>` : ''}</td>
       <td>${esc(m.block_billing === 'prohibited' ? 'No block (matter)' : m.block_billing === 'allowed' ? 'Block OK (matter)' : clientRule(m.client_no))}</td>
       <td><button data-action="edit">Edit</button> <button data-action="archive">${m.archived ? 'Restore' : 'Archive'}</button></td>
     </tr>`,
@@ -917,6 +933,12 @@ function readProposal(panel) {
 
 document.addEventListener('change', guard(async (ev) => {
   const el = ev.target;
+  if (el.dataset.codeset) {
+    await api(`/api/matters/${el.dataset.codeset}`, { method: 'PATCH', body: { code_set: el.value } });
+    toast(el.value ? 'This matter now uses task/activity codes' : 'Codes turned off for this matter');
+    renderMatters();
+    return refreshDay(true);
+  }
   if (el.dataset.label) {
     await api(`/api/matters/${el.dataset.label}`, { method: 'PATCH', body: { label: el.value.trim() } });
     return toast('Key label saved');
@@ -1082,9 +1104,15 @@ function fillJurisdictionOptions() {
   sel.innerHTML = `<option value="">Firm default${dflt ? ` (${esc(dflt)})` : ''}</option>` + jurisdictions().map((j) => `<option value="${esc(j.code)}">${esc(jxLabel(j))}</option>`).join('');
 }
 
+// Whether a matter uses UTBMS task/activity codes, and which task set.
+function codeSetOptions(selected = '') {
+  const sets = config?.codes.taskSets ?? {};
+  return [['', 'No codes'], ...Object.entries(sets).map(([k, v]) => [k, v.label])]
+    .map(([k, label]) => `<option value="${esc(k)}"${k === (selected || '') ? ' selected' : ''}>${esc(label)}</option>`)
+    .join('');
+}
+
 function fillCodeSetOptions() {
   fillJurisdictionOptions();
-  const sets = config?.codes.taskSets ?? {};
-  $('#matter-form [name=code_set]').innerHTML =
-    '<option value="">None</option>' + Object.entries(sets).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');
+  $('#matter-form [name=code_set]').innerHTML = codeSetOptions();
 }

@@ -17,6 +17,7 @@ export type State = {
 	now: number;
 	today: string;
 	total_hours: number;
+	daily_target?: number; // hours (0 = off)
 	running: { id: number; matter_id: number; start_ms: number; task: number; tasks_today: number; matter: Matter } | null;
 	overnight?: { segment_id: number; running: boolean; matter: Matter } | null; // a timer left running overnight, awaiting an answer in the app
 	matters: Matter[];
@@ -96,6 +97,20 @@ class Companion extends EventEmitter {
 		const data = (await res.json()) as { error?: string };
 		if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
 		return data;
+	}
+
+	/**
+	 * Review: show today in the deck-time page you already have open (installed app or
+	 * browser tab). Only when none is open, open it in the default browser.
+	 */
+	async showReview(): Promise<void> {
+		try {
+			const r = (await this.post("/api/app/show", { view: "review" })) as { shown?: boolean };
+			if (r?.shown) return;
+		} catch {
+			// older companion or offline: fall through
+		}
+		await streamDeck.system.openUrl(COMPANION_URL);
 	}
 
 	async matters(): Promise<Matter[]> {

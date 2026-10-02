@@ -155,6 +155,14 @@ about a millisecond, and they never add facts that aren't in your notes:
 The design principle: no model in the click path. A model can later act as an
 offline teacher that reviews accumulated corrections and proposes rules.
 
+## Daily target
+
+A bar next to today's total fills toward your daily target (8 hours by default, set in **Settings → Timekeeper**). The same bar runs along the bottom of the Neo info bar and turns green when you hit the target. Set it to 0 to hide it.
+
+## Review key
+
+**Review** brings up the deck-time window you already have open, whether that's an installed web app (Safari's Add to Dock, or Chrome/Edge's Install) or a browser tab, and shows today's entries. It doesn't open a new window in your default browser. Only when no deck-time page is open does it launch one: the installed web app if there is one, otherwise the default browser. On Windows, it raises the window whose title mentions deck-time (not yet tested on a work PC).
+
 ## Late nights (midnight rollover)
 
 You don't have to answer anything when you work past midnight. The timer keeps running, and the time is split at midnight: each day gets the hours worked on it, and notes go to the day they were taken. If you'd rather keep late-night time on the day you started, set **Settings → Late nights → Time after midnight** to "Previous day until 2/4/6 AM". The workday then rolls over at that hour.

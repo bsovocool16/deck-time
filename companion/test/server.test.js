@@ -8,13 +8,14 @@ import { createServer } from '../src/server.js';
 import { Store } from '../src/store.js';
 
 let server, base, store;
+const raised = []; // pages the Review key tried to bring forward (never touches real windows in tests)
 let config = deepMerge(DEFAULTS, { timekeeper: { id: '4321' } });
 
 before(async () => {
   store = new Store(':memory:', () => config);
   const fetchImpl = async () => ({ ok: true, json: async () => ({ message: { content: 'Reviewed agreement.' } }) });
   const exportDir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-time-'));
-  server = createServer({ store, getConfig: () => config, setConfig: (c) => (config = c), fetchImpl, exportDir });
+  server = createServer({ store, getConfig: () => config, setConfig: (c) => (config = c), fetchImpl, exportDir, raiseWindow: async (page) => (raised.push(page), false) });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -147,4 +148,31 @@ test('the learning loop: instant draft, your correction at export, better next d
   await api(`/api/entries/${today}/${m.id}`, { method: 'PATCH', body: { notes: 'rev deck' } });
   e = await (await api(`/api/entries/${today}/${m.id}/narrate`, { method: 'POST', body: {} })).json();
   assert.equal(e.narrative, 'Reviewed board presentation.');
+});
+
+test('Review key shows the open page instead of opening the default browser', async () => {
+  // Nothing open: tell the plugin to open the address itself.
+  let r = await (await api('/api/app/show', { method: 'POST', body: { view: 'review' } })).json();
+  assert.equal(r.shown, false);
+  assert.equal(raised.at(-1), null);
+
+  // A page open as an installed app in Safari: it gets a 'show' event and is raised.
+  const ctrl = new AbortController();
+  const res = await fetch(`${base}/api/events?display=standalone`, {
+    signal: ctrl.signal,
+    headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15' },
+  });
+  const reader = res.body.getReader();
+  await reader.read(); // initial state
+  r = await (await api('/api/app/show', { method: 'POST', body: { view: 'review' } })).json();
+  assert.equal(r.shown, true);
+  assert.deepEqual({ ...raised.at(-1), at: 0 }, { display: 'standalone', browser: 'safari', at: 0 });
+  let text = '';
+  while (!text.includes('event: show')) text += new TextDecoder().decode((await reader.read()).value);
+  ctrl.abort();
+});
+
+test('state carries the daily target', async () => {
+  const s = await (await api('/api/state')).json();
+  assert.equal(s.daily_target, 8);
 });

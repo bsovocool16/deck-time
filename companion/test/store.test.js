@@ -471,3 +471,23 @@ test('dayBounds and localDate honor a workday rollover hour', async () => {
   assert.equal(localDate(at(30, 4, 0), 4), '2026-09-30');
   assert.deepEqual(dayBounds('2026-09-29', 4), [at(29, 4), at(30, 4)]);
 });
+
+test('browserOf tells browsers apart (Edge and Chrome both say Safari)', async () => {
+  const { browserOf } = await import('../src/window.js');
+  assert.equal(browserOf('Mozilla/5.0 (Macintosh) Gecko/20100101 Firefox/131.0'), 'firefox');
+  assert.equal(browserOf('Mozilla/5.0 AppleWebKit/537.36 Chrome/129.0 Safari/537.36 Edg/129.0'), 'edge');
+  assert.equal(browserOf('Mozilla/5.0 AppleWebKit/537.36 Chrome/129.0 Safari/537.36'), 'chrome');
+  assert.equal(browserOf('Mozilla/5.0 (Macintosh) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15'), 'safari');
+});
+
+test('findWebApps finds an installed deck-time web app by its address', { skip: process.platform !== 'darwin' }, async () => {
+  const { findWebApps } = await import('../src/window.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'apps-'));
+  const plist = (id, url) => `<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>${id}</string><key>Manifest</key><dict><key>start_url</key><string>${url}</string></dict></dict></plist>`;
+  for (const [name, id, url] of [['DeckTime', 'com.apple.Safari.WebApp.TEST', 'http://127.0.0.1:7331/'], ['Other', 'com.apple.Safari.WebApp.OTHER', 'https://example.com/']]) {
+    fs.mkdirSync(path.join(dir, `${name}.app`, 'Contents'), { recursive: true });
+    fs.writeFileSync(path.join(dir, `${name}.app`, 'Contents', 'Info.plist'), plist(id, url));
+  }
+  assert.deepEqual(await findWebApps('http://127.0.0.1:7331', [dir]), ['com.apple.Safari.WebApp.TEST']);
+  assert.deepEqual(await findWebApps('http://127.0.0.1:7999', [dir]), []);
+});

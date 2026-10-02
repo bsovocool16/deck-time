@@ -1,6 +1,6 @@
 import streamDeck, { action, type KeyAction, type KeyDownEvent, SingletonAction, type WillAppearEvent, type WillDisappearEvent } from "@elgato/streamdeck";
 import type { JsonObject } from "@elgato/utils";
-import { COMPANION_URL, companion, type State } from "../companion";
+import { companion, type State } from "../companion";
 import { dictateKey, matterKey, messageKey, nextTaskKey, reviewKey, stopKey } from "../render";
 
 /**
@@ -48,7 +48,7 @@ export class DeckKey extends SingletonAction {
 			if (a.kind === "matter" && a.matter_id) await companion.post("/api/timer/toggle", { matter_id: a.matter_id });
 			else if (a.kind === "next-task") await companion.post("/api/timer/next-task");
 			else if (a.kind === "stop") await companion.post("/api/timer/stop");
-			else if (a.kind === "review" || a.kind === "empty") await streamDeck.system.openUrl(COMPANION_URL);
+			else if (a.kind === "review" || a.kind === "empty") await companion.showReview();
 			else if (a.kind === "dictate") await companion.post("/api/dictation/toggle"); // tap to start, tap to stop
 		} catch (e) {
 			streamDeck.logger.warn(`deck key: ${(e as Error).message}`);

@@ -21,11 +21,17 @@ export class Infobar extends SingletonAction {
 
 	#renderAll(): void {
 		const s = companion.state;
-		let feedback: { title: string; value: string };
+		let feedback: { title: string; value: string; target?: { value: number; bar_fill_c: string; opacity: 0 | 1 } };
 		if (!companion.online || !s) feedback = { title: "deck-time", value: "offline" };
 		else if (s.overnight) feedback = { title: "Overnight timer?", value: "check app" };
 		else if (s.running) feedback = { title: s.running.matter.label || s.running.matter.name, value: clock(s.now - s.running.start_ms) };
 		else feedback = { title: "No timer running", value: `${s.total_hours.toFixed(1)}h today` };
+		if (companion.online && s) {
+			// Progress toward the daily target (Settings → Daily target); hidden when it's 0.
+			const goal = s.daily_target ?? 0;
+			const pct = goal ? Math.min(100, Math.round((s.total_hours / goal) * 100)) : 0;
+			feedback.target = { value: pct, bar_fill_c: pct >= 100 ? "#5FAF73" : "#7AA7D6", opacity: goal ? 1 : 0 };
+		}
 		const key = JSON.stringify(feedback);
 		if (key === this.#last) return;
 		this.#last = key;

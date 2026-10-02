@@ -69,6 +69,7 @@ export const DEFAULTS = {
     check: true,
     checkHour: 5, // 5:00 AM
   },
+  dailyTarget: 8, // hours; shown as a progress bar on the page and the Neo info bar (0 = hide)
   rounding: {
     increment: 0.1, // hours
     mode: 'up', // 'up' | 'nearest'

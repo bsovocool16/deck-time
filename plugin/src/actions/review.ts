@@ -1,5 +1,5 @@
-import streamDeck, { action, type KeyDownEvent, SingletonAction, type WillAppearEvent } from "@elgato/streamdeck";
-import { COMPANION_URL } from "../companion";
+import { action, type KeyDownEvent, SingletonAction, type WillAppearEvent } from "@elgato/streamdeck";
+import { companion } from "../companion";
 import { reviewKey } from "../render";
 
 /** Opens the day's entries in the browser for notes, narratives, and export. */
@@ -10,6 +10,6 @@ export class Review extends SingletonAction {
 	}
 
 	override async onKeyDown(_ev: KeyDownEvent): Promise<void> {
-		await streamDeck.system.openUrl(COMPANION_URL);
+		await companion.showReview();
 	}
 }

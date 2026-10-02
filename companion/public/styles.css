@@ -156,7 +156,12 @@ input[type="checkbox"] { width: auto; min-height: 0; }
 }
 .tab:hover:not(:disabled) { background: none; color: var(--ink); }
 .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
-.total { color: var(--ink-2); margin-left: auto; }
+.total { color: var(--ink-2); margin-left: auto; display: flex; align-items: center; gap: 10px; white-space: nowrap; }
+.target { width: clamp(60px, 8vw, 120px); height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; }
+.target-fill { display: block; height: 100%; width: 0; background: var(--focus); border-radius: 3px; transition: width 0.6s ease; }
+.target.met .target-fill { background: var(--ok, #3f7d4e); }
+select.code-set { width: auto; }
+@media (max-width: 640px) { .target { display: none; } }
 .theme-toggle { height: 26px; padding: 0 8px; font-size: 12.5px; color: var(--muted); }
 .theme-toggle:hover:not(:disabled) { color: var(--ink); }
 
