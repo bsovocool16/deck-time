@@ -10,6 +10,13 @@
   <meta name="theme-color" content="#151514">
   <meta name="apple-mobile-web-app-title" content="deck-time">
   <link rel="stylesheet" href="/styles.css">
+  <script>
+    // Apply a saved light/dark choice before the page draws (no flash).
+    try {
+      const t = localStorage.getItem('deck-time-theme');
+      if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    } catch {}
+  </script>
 </head>
 <body>
   <div id="demo-banner" class="demo-banner" hidden>
@@ -24,6 +31,7 @@
         <button data-tab="settings" class="tab">Settings</button>
       </nav>
       <div class="total" id="total" title="Billable hours today">0.0 h</div>
+      <button type="button" id="theme-toggle" class="quiet theme-toggle" title="Switch between automatic, light and dark">Theme: Auto</button>
     </div>
   </header>
 

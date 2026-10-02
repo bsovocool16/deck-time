@@ -181,6 +181,25 @@ async function placeOnKey(slot, item) {
 
 $('#deck-search').addEventListener('input', () => renderSidebar(true));
 
+// ---------- light / dark ----------
+
+const THEMES = ['auto', 'light', 'dark'];
+function currentTheme() {
+  const t = document.documentElement.dataset.theme;
+  return t === 'light' || t === 'dark' ? t : 'auto';
+}
+function setTheme(t) {
+  if (t === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  try {
+    if (t === 'auto') localStorage.removeItem('deck-time-theme');
+    else localStorage.setItem('deck-time-theme', t);
+  } catch {}
+  $('#theme-toggle').textContent = `Theme: ${t[0].toUpperCase()}${t.slice(1)}`;
+}
+$('#theme-toggle').addEventListener('click', () => setTheme(THEMES[(THEMES.indexOf(currentTheme()) + 1) % THEMES.length]));
+setTheme(currentTheme());
+
 // ---------- dictated notes ----------
 
 /**
@@ -215,12 +234,13 @@ async function showDictatedNote({ text, matter_id }) {
 let micDismissed = false;
 let micFailed = false;
 let micTesting = false;
+let micConfirmed = false; // set as soon as a test hears you, without waiting for the server
 
 function renderMicSetup() {
   const d = state.dictation;
   // A silent dictation brings the card back even after "Not now".
-  if (d?.error && /No sound was recorded/.test(d.error)) [micDismissed, micFailed] = [false, true];
-  const show = !!d && !state.mic_verified && !micDismissed;
+  if (d?.error && /No sound was recorded/.test(d.error)) [micDismissed, micFailed, micConfirmed] = [false, true, false];
+  const show = !!d && !state.mic_verified && !micDismissed && !micConfirmed;
   $('#mic-setup').hidden = !show;
   $('#mic-fix').hidden = !micFailed;
   if (!micTesting) $('#mic-test').textContent = micFailed ? 'Test again' : 'Test microphone';
@@ -238,7 +258,17 @@ $('#mic-test').addEventListener('click', guard(async (ev) => {
     const r = await api('/api/dictation/test', { method: 'POST', body: {} });
     micFailed = !r.heard;
     $('#mic-result').textContent = r.heard ? 'Microphone works. Dictation is ready.' : '';
-    if (r.heard) toast('Microphone works. Dictation is ready.');
+    if (r.heard) {
+      // Show the result for a moment, then fold the card away.
+      $('#mic-fix').hidden = true;
+      setTimeout(() => $('#mic-setup').classList.add('collapsing'), 1400);
+      setTimeout(() => {
+        micConfirmed = true;
+        $('#mic-setup').classList.remove('collapsing');
+        renderMicSetup();
+        toast('Microphone works. Dictation is ready.');
+      }, 1800);
+    }
   } finally {
     clearInterval(tick);
     micTesting = false;

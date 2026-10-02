@@ -49,6 +49,28 @@
   }
 }
 
+/* An explicit choice from the theme toggle wins over the system setting. */
+:root[data-theme="dark"] {
+    --paper: #121211;
+    --sheet: #181817;
+    --ink: #e9e9e5;
+    --ink-2: #bdbdb7;
+    --muted: #8d8d87;
+    --faint: #62625e;
+    --rule: #262624;
+    --rule-strong: #34342f;
+    --field: #1c1c1b;
+    --hover: #202020;
+    --primary: #e9e9e5;
+    --primary-ink: #121211;
+    --danger: #e0676c;
+    --live: #4fbf86;
+    --warn: #d9a441;
+    --focus: #7aa7d6;
+    --key: #0b0b0b;
+    color-scheme: dark;
+  }
+
 * { box-sizing: border-box; }
 
 body {
@@ -70,6 +92,8 @@ h2, h3 {
 }
 
 .hidden { display: none !important; }
+/* The hidden attribute must win over component display rules (grid, flex). */
+[hidden] { display: none !important; }
 .mono { font-family: var(--mono); font-size: 12px; }
 .num { text-align: right; }
 
@@ -130,6 +154,8 @@ input[type="checkbox"] { width: auto; min-height: 0; }
 .tab:hover:not(:disabled) { background: none; color: var(--ink); }
 .tab.active { color: var(--ink); border-bottom-color: var(--ink); }
 .total { color: var(--ink-2); margin-left: auto; }
+.theme-toggle { height: 26px; padding: 0 8px; font-size: 12.5px; color: var(--muted); }
+.theme-toggle:hover:not(:disabled) { color: var(--ink); }
 
 /* ---------- running strip ---------- */
 
@@ -345,6 +371,9 @@ label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap;
 .mic-setup ol { padding-left: 20px; display: grid; gap: 4px; }
 .mic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .mic-result { color: var(--live); font-size: 13px; }
+.mic-setup { transition: opacity 0.35s ease, transform 0.35s ease; }
+.mic-setup.collapsing { opacity: 0; transform: translateY(-6px); }
+@media (prefers-reduced-motion: reduce) { .mic-setup { transition: none; } }
 .mic-fix { display: grid; gap: 10px; padding-top: 4px; border-top: 1px solid var(--rule); }
 .mic-fix > p:first-child { padding-top: 10px; color: var(--danger); }
 .mic-tccutil { font-size: 12.5px; }

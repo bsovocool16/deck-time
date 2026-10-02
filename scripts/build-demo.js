@@ -62,11 +62,6 @@ let app = read('companion/public/app.js');
 // The artifact skeleton supplies doctype/head/body; keep just our content.
 const bodyInner = html.slice(html.indexOf('<body>') + 6, html.indexOf('<script type="module"'));
 
-// Dark tokens also apply when the viewer explicitly picks dark.
-const darkBlock = css.match(/@media \(prefers-color-scheme: dark\) \{\s*:root:not\(\[data-theme="light"\]\) \{([\s\S]*?)\}\s*\}/);
-if (!darkBlock) throw new Error('build-demo: dark token block not found');
-css += `\n:root[data-theme="dark"] {${darkBlock[1]}}\n`;
-
 // confirm() is blocked in the artifact frame; use the in-page panel.
 app = app.replace(/!confirm\(/g, '!await window.demoConfirm(');
 // Exports open in an in-page panel rather than saving a file.
