@@ -38,12 +38,20 @@ Everything stays on the computer, in the user's profile:
 | Path | Contents |
 |---|---|
 | `%APPDATA%\deck-time\deck-time.db` | Matters (names, client and matter numbers), timer records, notes, narratives. SQLite. |
+| `%APPDATA%\deck-time\code-memory.jsonl` | Past narratives with their task/activity codes (from the user's own exports, or Intapp `.TIM` files the user imports), used to suggest codes. Plain text; no model or network involved. |
 | `%APPDATA%\deck-time\demo.db` | Fictional sample matters used for demonstrations. |
 | `%APPDATA%\deck-time\config.json` | Settings (timekeeper ID, rounding, key layout). |
 | `%APPDATA%\deck-time\exports\` | Exported `.TIM` files for import into Intapp Time. |
 
 These files are covered by the machine's normal disk encryption and backup
 policies. Nothing is copied elsewhere.
+
+## How suggestions work
+
+Task and activity codes are suggested by keyword rules and by counting which
+words appear with which codes in the user's own past entries (the code memory
+above). There is no AI model in the office edition, and nothing is sent
+anywhere.
 
 ## Intapp Time
 
