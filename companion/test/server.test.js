@@ -100,7 +100,9 @@ test('deck mirrors what the Stream Deck reports; fixed keys cannot be rearranged
 test('codes are instant, need no AI, and exports teach the code memory', async () => {
   const m = await (await api('/api/matters', { method: 'POST', body: { name: 'Coded', client_no: '555555', matter_no: '00001', code_set: 'counseling' } })).json();
   const { today } = await (await api('/api/state')).json();
-  await api('/api/segments', { method: 'POST', body: { matter_id: m.id, start_ms: Date.now() - 30 * 60_000, end_ms: Date.now() - 20 * 60_000 } });
+  // Fixed times early in today, so the test doesn't depend on the time of day it runs.
+  const midnight = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+  await api('/api/segments', { method: 'POST', body: { matter_id: m.id, start_ms: midnight + 60_000, end_ms: midnight + 11 * 60_000 } });
 
   // Saving a narrative fills codes immediately (keyword rules; no model call).
   const saved = await (await api(`/api/entries/${today}/${m.id}`, { method: 'PATCH', body: { narrative: 'Telephone conference with client regarding licensing.' } })).json();

@@ -93,7 +93,8 @@ test('demo day exports use a fictional timekeeper', async () => {
   await api('/api/workspace', { method: 'POST', body: { workspace: 'demo' } });
   const { today, matters } = await json('/api/state');
   const stark = matters.find((m) => m.label === 'Stark Board');
-  await api('/api/segments', { method: 'POST', body: { matter_id: stark.id, start_ms: Date.now() - 20 * 60_000, end_ms: Date.now() - 5 * 60_000 } });
+  const midnight = new Date(new Date().setHours(0, 0, 0, 0)).getTime(); // not time-of-day dependent
+  await api('/api/segments', { method: 'POST', body: { matter_id: stark.id, start_ms: midnight + 60_000, end_ms: midnight + 16 * 60_000 } });
   // Finish every entry on the sample day so the export validates.
   for (const e of (await json(`/api/day?date=${today}`)).entries) {
     const codes = e.matter.code_set === 'litigation' ? { task_code: 'L120', activity_code: 'A104' } : e.matter.code_set ? { task_code: 'C300', activity_code: 'A104' } : {};
