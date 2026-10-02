@@ -103,8 +103,11 @@ function renderRunning() {
   btn.textContent = d?.status === 'recording' ? `Stop recording ${clock(state.now - d.started_at)}` : d?.status === 'transcribing' ? 'Transcribing…' : 'Dictate';
   if (d?.error && d.error !== renderRunning.lastError) toast(d.error, d.error !== 'Heard nothing');
   renderRunning.lastError = d?.error;
-  if (d?.status === 'idle' && renderRunning.lastDictation === 'transcribing') refreshDay();
-  renderRunning.lastDictation = d?.status;
+  if (d?.last && d.last.at !== renderRunning.lastNoteAt) {
+    // The first snapshot after loading only records where we are.
+    if (renderRunning.lastNoteAt !== undefined) showDictatedNote(d.last);
+    renderRunning.lastNoteAt = d.last.at;
+  } else if (!d?.last && renderRunning.lastNoteAt === undefined) renderRunning.lastNoteAt = null;
   $('#total').textContent = `${state.total_hours.toFixed(1)} h today`;
   document.title = r ? `${clock(state.now - r.start_ms)} · ${r.matter.label || r.matter.name}` : 'deck-time';
 }
@@ -177,6 +180,35 @@ async function placeOnKey(slot, item) {
 }
 
 $('#deck-search').addEventListener('input', () => renderSidebar(true));
+
+// ---------- dictated notes ----------
+
+/**
+ * Show a dictated note as soon as it's saved. If you're editing that entry's
+ * notes, the dictation is added to what you've typed (and saved together), so
+ * neither is lost. Otherwise the entries refresh.
+ */
+async function showDictatedNote({ text, matter_id }) {
+  const matter = state.matters.find((m) => m.id === matter_id);
+  toast(`Added to ${matter?.label || matter?.name || 'notes'}: “${text}”`);
+  if (day !== state.today) return;
+  const field = document.querySelector(`.entry[data-matter="${matter_id}"][data-part="0"] textarea[name="notes"]`);
+  if (field && document.activeElement === field) {
+    const server = (await api(`/api/day?date=${day}`)).entries.find((e) => e.matter_id === matter_id && e.part === 0)?.notes ?? '';
+    // Server notes already end with the dictation; keep the user's unsaved edits and add it.
+    if (!field.value.includes(text)) field.value = field.value.trim() ? `${field.value.trim()}; ${text}` : text;
+    if (field.value !== server) await api(`/api/entries/${day}/${matter_id}`, { method: 'PATCH', body: { notes: field.value } });
+    return;
+  }
+  if ($('#entries').contains(document.activeElement)) {
+    // Editing a different entry: update just this one notes box.
+    const e = (await api(`/api/day?date=${day}`)).entries.find((x) => x.matter_id === matter_id && x.part === 0);
+    if (field && e) field.value = e.notes;
+    else refreshDay(true);
+    return;
+  }
+  refreshDay(true);
+}
 
 // ---------- microphone setup ----------
 

@@ -1,18 +1,11 @@
-import streamDeck, { action, type KeyDownEvent, type KeyUpEvent, SingletonAction, type WillAppearEvent } from "@elgato/streamdeck";
+import streamDeck, { action, type KeyDownEvent, SingletonAction, type WillAppearEvent } from "@elgato/streamdeck";
 import { companion } from "../companion";
 import { dictateKey, messageKey } from "../render";
 
-const HOLD_MS = 450;
-
-/**
- * Dictate a note into the running timer. Hold to talk (release to stop), or
- * tap once to start and tap again to stop. Transcription happens locally.
- */
+/** Dictate a note into the running timer: tap to start, tap again to stop. Transcription happens locally. */
 @action({ UUID: "com.bsovocool.decktime.dictate" })
 export class Dictate extends SingletonAction {
 	#last = "";
-	#pressedAt = 0;
-	#startedThisPress = false;
 
 	constructor() {
 		super();
@@ -26,33 +19,13 @@ export class Dictate extends SingletonAction {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent): Promise<void> {
-		const d = companion.state?.dictation;
-		if (!companion.online || !d) return ev.action.showAlert();
-		this.#pressedAt = Date.now();
-		this.#startedThisPress = false;
+		if (!companion.online || !companion.state?.dictation) return ev.action.showAlert();
 		try {
-			if (d.status === "recording") {
-				await companion.post("/api/dictation/stop");
-			} else if (d.status === "idle") {
-				await companion.post("/api/dictation/start");
-				this.#startedThisPress = true;
-			}
+			await companion.post("/api/dictation/toggle");
 		} catch (e) {
 			streamDeck.logger.warn(`dictation: ${(e as Error).message}`);
 			await ev.action.showAlert();
 		}
-	}
-
-	override async onKeyUp(ev: KeyUpEvent): Promise<void> {
-		// Held down = push-to-talk: releasing stops. A quick tap leaves it recording.
-		if (this.#startedThisPress && Date.now() - this.#pressedAt >= HOLD_MS) {
-			try {
-				await companion.post("/api/dictation/stop");
-			} catch {
-				await ev.action.showAlert();
-			}
-		}
-		this.#startedThisPress = false;
 	}
 
 	#renderAll(): void {

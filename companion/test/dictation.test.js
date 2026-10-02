@@ -47,6 +47,8 @@ test('record then transcribe appends a note for the matter running at start', as
   const text = await d.stop();
   assert.equal(text, 'Call with opposing counsel regarding the NDA.');
   assert.deepEqual(notes, [['Call with opposing counsel regarding the NDA.', 7]]);
+  assert.equal(d.snapshot().last.text, 'Call with opposing counsel regarding the NDA.');
+  assert.equal(d.snapshot().last.matter_id, 7);
   assert.equal(d.status, 'idle');
   assert.deepEqual(calls[1].args.slice(1), ['-n', 'stat']);
   assert.deepEqual(calls[2].args.slice(2), ['pad', '0.5', '0.3']);

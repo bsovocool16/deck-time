@@ -53,7 +53,7 @@
       }
       if (s.kind === 'dictate') {
         const img = d.status === 'recording' ? R.dictateKey('recording', state.now - d.started_at) : d.status === 'transcribing' ? R.dictateKey('transcribing') : R.dictateKey(run ? 'idle' : 'disabled');
-        return setKey(i, img, `Key ${i + 1}: Dictate, hold to talk or tap to start and stop`, { kind: 'dictate' });
+        return setKey(i, img, `Key ${i + 1}: Dictate, tap to start and tap again to stop`, { kind: 'dictate' });
       }
       if (s.kind === 'next-task') return setKey(i, R.nextTaskKey(run ? { active: true, task: run.tasks_today, elapsedMs: state.now - run.start_ms, color: run.matter.color } : { active: false }), `Key ${i + 1}: Next task`, { kind: 'next-task' });
       if (s.kind === 'stop') return setKey(i, R.stopKey(!!run, state.total_hours), `Key ${i + 1}: Stop`, { kind: 'stop' });
@@ -82,9 +82,7 @@
   const placingNow = () => document.querySelector('#deck')?.classList.contains('placing');
   new MutationObserver(() => $('#neo').classList.toggle('placing', placingNow())).observe($('#deck'), { attributes: true, attributeFilter: ['class'] });
 
-  // Dictate supports hold-to-talk like the plugin; everything else is a tap.
-  let pressAt = 0;
-  let startedThisPress = false;
+  // Every key is a tap; Dictate toggles (tap to start, tap again to stop).
   keysEl.addEventListener('pointerdown', async (ev) => {
     const b = ev.target.closest('.neo-key');
     if (!b || placingNow()) return;
@@ -94,24 +92,12 @@
       else if (b.dataset.action === 'review') document.querySelector('#entries').scrollIntoView({ behavior: 'smooth', block: 'start' });
       else if (b.dataset.action === 'next-task') await post('/api/timer/next-task');
       else if (b.dataset.action === 'stop') await post('/api/timer/stop');
-      else if (b.dataset.action === 'dictate') {
-        pressAt = Date.now();
-        const before = demo.state().dictation.status;
-        await post('/api/dictation/toggle');
-        startedThisPress = before === 'idle';
-      }
+      else if (b.dataset.action === 'dictate') await post('/api/dictation/toggle');
     } catch (e) {
       flash(e.message);
     }
   });
-  const release = async (ev) => {
-    const b = ev.target.closest?.('.neo-key');
-    document.querySelectorAll('.neo-key.down').forEach((k) => k.classList.remove('down'));
-    if (b?.dataset.action === 'dictate' && startedThisPress && Date.now() - pressAt >= 450) {
-      startedThisPress = false;
-      if (demo.state().dictation.status === 'recording') await post('/api/dictation/stop').catch(() => {});
-    }
-  };
+  const release = () => document.querySelectorAll('.neo-key.down').forEach((k) => k.classList.remove('down'));
   keysEl.addEventListener('pointerup', release);
   keysEl.addEventListener('pointerleave', release);
   keysEl.addEventListener('keydown', (ev) => {
@@ -155,7 +141,7 @@
   const STEPS = [
     ['deck-changed', 'Drag a matter from the list onto a key'],
     ['started', 'Tap a matter key to start its timer'],
-    ['dictated', 'Dictate what you’re doing (tap or hold Dictate)'],
+    ['dictated', 'Dictate what you’re doing (tap Dictate, talk, tap again)'],
     ['next-task', 'Tap Next task when you switch to a new task'],
     ['dictated2', 'Dictate again for the new task'],
     ['stopped', 'Stop the timer'],
@@ -244,7 +230,7 @@
       dictations = 0;
       listen.dataset.state = 'idle';
       listenLabel.textContent = 'Dictation';
-      listenText.textContent = 'Start a matter, then tap or hold Dictate and talk. Your words land in that matter’s notes, timestamped.';
+      listenText.textContent = 'Start a matter, then tap Dictate, talk, and tap it again to finish. Your words land in that matter’s notes, timestamped.';
     }
     if (['deck-changed', 'started', 'next-task', 'stopped', 'split-applied', 'drafted', 'exported'].includes(event)) done.add(event);
     renderSteps();

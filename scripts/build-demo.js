@@ -97,7 +97,7 @@ const deck = `
           </div>
           <div class="listen" id="listen" data-state="idle" aria-live="polite">
             <div class="listen-head"><span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span id="listen-label">Dictation</span></div>
-            <div id="listen-text">Start a matter, then tap or hold Dictate and talk. Your words land in that matter’s notes, timestamped.</div>
+            <div id="listen-text">Start a matter, then tap Dictate, talk, and tap it again to finish. Your words land in that matter’s notes, timestamped.</div>
           </div>
           <aside class="tryit" aria-label="Try it">
             <div class="tryit-head"><h2>Try it</h2><span id="tryit-count"></span></div>

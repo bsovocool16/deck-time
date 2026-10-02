@@ -17,7 +17,7 @@ one-click export to **Intapp Time** (`.TIM`).
 - **Tap a matter key** to start its timer. Tapping another matter switches (only
   one runs at a time); tapping the running one stops it. The live key shows the
   elapsed clock, idle keys show today's hours, and the Neo info bar shows what's running.
-- **Dictate** (hold to talk, or tap/tap) into the running matter's notes. It is
+- **Dictate** (tap to start, tap again to stop) into the running matter's notes. It is
   transcribed locally with Whisper.
 - **Review** opens the day: edit notes, hit ✨ to turn shorthand into a polished
   narrative (local model via Ollama), adjust hours, then **Export .tim**.

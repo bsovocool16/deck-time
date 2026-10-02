@@ -25,7 +25,7 @@ export class Dictation extends EventEmitter {
   }
 
   snapshot() {
-    return { status: this.status, error: this.error, started_at: this.startedAt };
+    return { status: this.status, error: this.error, started_at: this.startedAt, last: this.last ?? null };
   }
 
   #set(status, error = null) {
@@ -79,7 +79,10 @@ export class Dictation extends EventEmitter {
       // Leading silence stops whisper from dropping words spoken right at key-down.
       const audio = (await this.#run(sox, [this.file, padded, 'pad', '0.5', '0.3'])) ? padded : this.file;
       const text = dropPromptEcho(await this.transcribe(audio), this.context?.prompt);
-      if (text) this.onText(text, this.context);
+      if (text) {
+        this.onText(text, this.context);
+        this.last = { text, matter_id: this.context?.matterId ?? null, at: Date.now() };
+      }
       this.#set('idle', text ? null : 'Heard nothing');
       return text;
     } catch (e) {

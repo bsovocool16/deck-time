@@ -1,9 +1,7 @@
-import streamDeck, { action, type KeyAction, type KeyDownEvent, type KeyUpEvent, SingletonAction, type WillAppearEvent, type WillDisappearEvent } from "@elgato/streamdeck";
+import streamDeck, { action, type KeyAction, type KeyDownEvent, SingletonAction, type WillAppearEvent, type WillDisappearEvent } from "@elgato/streamdeck";
 import type { JsonObject } from "@elgato/utils";
 import { COMPANION_URL, companion, type State } from "../companion";
 import { dictateKey, matterKey, messageKey, nextTaskKey, reviewKey, stopKey } from "../render";
-
-const HOLD_MS = 450;
 
 /**
  * A key that follows the layout set in the deck-time app. Put this action on
@@ -15,7 +13,6 @@ const HOLD_MS = 450;
 export class DeckKey extends SingletonAction {
 	#slots = new Map<string, number>(); // action id -> slot index
 	#lastImage = new Map<string, string>();
-	#press = new Map<string, { at: number; startedDictation: boolean }>();
 
 	constructor() {
 		super();
@@ -47,32 +44,15 @@ export class DeckKey extends SingletonAction {
 		const s = companion.state;
 		const a = this.#assignment(ev.action.id, s);
 		if (!companion.online || !s || !a) return ev.action.showAlert();
-		this.#press.set(ev.action.id, { at: Date.now(), startedDictation: false });
 		try {
 			if (a.kind === "matter" && a.matter_id) await companion.post("/api/timer/toggle", { matter_id: a.matter_id });
 			else if (a.kind === "next-task") await companion.post("/api/timer/next-task");
 			else if (a.kind === "stop") await companion.post("/api/timer/stop");
 			else if (a.kind === "review" || a.kind === "empty") await streamDeck.system.openUrl(COMPANION_URL);
-			else if (a.kind === "dictate") {
-				const status = s.dictation?.status;
-				if (status === "recording") await companion.post("/api/dictation/stop");
-				else if (status === "idle") {
-					await companion.post("/api/dictation/start");
-					this.#press.set(ev.action.id, { at: Date.now(), startedDictation: true });
-				}
-			}
+			else if (a.kind === "dictate") await companion.post("/api/dictation/toggle"); // tap to start, tap to stop
 		} catch (e) {
 			streamDeck.logger.warn(`deck key: ${(e as Error).message}`);
 			await ev.action.showAlert();
-		}
-	}
-
-	override async onKeyUp(ev: KeyUpEvent): Promise<void> {
-		// Dictate supports hold-to-talk: releasing after a hold stops recording.
-		const p = this.#press.get(ev.action.id);
-		this.#press.delete(ev.action.id);
-		if (p?.startedDictation && Date.now() - p.at >= HOLD_MS) {
-			await companion.post("/api/dictation/stop").catch(() => ev.action.showAlert());
 		}
 	}
 

@@ -519,7 +519,7 @@
     await sleep(650);
     addNote(d.phrase, d.matterId, 'dictated', d.started_at); // timestamped when speaking began
     emit('dictated', { text: d.phrase, matter: getMatter(d.matterId) });
-    Object.assign(d, { status: 'idle', started_at: null });
+    Object.assign(d, { status: 'idle', started_at: null, last: { text: d.phrase, matter_id: d.matterId, at: Date.now() } });
     changed();
     return { text: d.phrase };
   }
