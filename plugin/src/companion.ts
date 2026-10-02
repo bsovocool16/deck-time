@@ -20,7 +20,7 @@ export type State = {
 	running: { id: number; matter_id: number; start_ms: number; task: number; tasks_today: number; matter: Matter } | null;
 	matters: Matter[];
 	dictation: { status: "idle" | "recording" | "transcribing"; error: string | null; started_at: number | null } | null;
-	deck: { slot: number; kind: "matter" | "dictate" | "next-task" | "stop" | "review" | "empty"; matter_id: number | null }[];
+	deck: { slot: number; kind: "matter" | "dictate" | "next-task" | "stop" | "review" | "empty" | "none"; matter_id: number | null; fixed?: boolean }[];
 };
 
 /**
@@ -71,7 +71,9 @@ class Companion extends EventEmitter {
 					.join("\n");
 				if (!data) continue;
 				this.state = JSON.parse(data) as State;
+				const wasOffline = !this.online;
 				this.online = true;
+				if (wasOffline) this.emit("online");
 				this.emit("state", this.state);
 			}
 		}

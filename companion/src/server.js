@@ -33,12 +33,39 @@ export function createServer({
   workspace = null, // { get(), set(name), resetDemo() } when real/demo switching is available
 }) {
   const clients = new Set();
+  // What the Stream Deck plugin reports is actually on each key (in memory; the
+  // plugin re-sends after reconnecting). null until a deck reports in.
+  let physical = null;
+  const PHYSICAL_KINDS = new Set(['key', 'matter', 'dictate', 'next-task', 'stop', 'review']);
+  const LABELS = { matter: 'a matter', dictate: 'Dictate', 'next-task': 'Next task', stop: 'Stop', review: 'Review', none: 'another action' };
+
+  /** The layout as the device shows it: deck-time Keys follow the app; anything else is fixed. */
+  function effectiveDeck() {
+    const deck = store.deck();
+    if (!physical) return deck;
+    return deck.map((s) => {
+      const p = physical.get(s.slot);
+      if (p?.kind === 'key') return { ...s, fixed: false };
+      if (p) return { slot: s.slot, kind: p.kind, matter_id: p.kind === 'matter' ? p.matter_id : null, fixed: true };
+      return { slot: s.slot, kind: 'none', matter_id: null, fixed: true };
+    });
+  }
+
+  function assertMovable(...slots) {
+    for (const slot of slots) {
+      const s = effectiveDeck()[slot];
+      if (s?.fixed) {
+        throw httpError(409, `Key ${slot + 1} is set to ${LABELS[s.kind]} in the Stream Deck app. To arrange it from here, put a deck-time Key action on it.`);
+      }
+    }
+  }
   store.on('change', () => broadcast());
   dictation?.on('change', () => broadcast());
   // A silent recording means the microphone needs attention again.
   dictation?.on('nosound', () => setConfig(deepMerge(getConfig(), { dictation: { verified: false } })));
   const fullState = () => ({
     ...store.state(),
+    deck: effectiveDeck(),
     dictation: dictation?.snapshot() ?? null,
     mic_verified: !!dictation && getConfig().dictation?.verified === true,
     workspace: workspace?.get() ?? 'real',
@@ -187,9 +214,27 @@ export function createServer({
       if (!workspace) throw httpError(501, 'Demo day is not available here');
       return workspace.resetDemo();
     }],
-    ['GET', /^\/api\/deck$/, () => store.deck()],
-    ['PUT', /^\/api\/deck\/(\d+)$/, (b, _, [slot]) => store.setDeckSlot(+slot, b)],
-    ['POST', /^\/api\/deck\/swap$/, (b) => store.swapDeckSlots(+b.from, +b.to)],
+    ['GET', /^\/api\/deck$/, () => effectiveDeck()],
+    ['PUT', /^\/api\/deck\/(\d+)$/, (b, _, [slot]) => {
+      assertMovable(+slot);
+      store.setDeckSlot(+slot, b);
+      return effectiveDeck();
+    }],
+    ['POST', /^\/api\/deck\/swap$/, (b) => {
+      assertMovable(+b.from, +b.to);
+      store.swapDeckSlots(+b.from, +b.to);
+      return effectiveDeck();
+    }],
+    ['POST', /^\/api\/deck\/physical$/, (b) => {
+      const slots = Array.isArray(b.slots) ? b.slots : [];
+      physical = new Map(
+        slots
+          .filter((s) => Number.isInteger(s.slot) && s.slot >= 0 && PHYSICAL_KINDS.has(s.kind))
+          .map((s) => [s.slot, { kind: s.kind, matter_id: s.matter_id == null ? null : +s.matter_id }]),
+      );
+      broadcast();
+      return { ok: true, keys: physical.size };
+    }],
     ['GET', /^\/api\/clients$/, () => store.listClients()],
     ['PUT', /^\/api\/clients\/([^/]+)$/, (b, _, [no]) => store.updateClient(decodeURIComponent(no), b)],
     ['POST', /^\/api\/export$/, (b) => exportDay(b)],

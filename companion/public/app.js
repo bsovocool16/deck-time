@@ -122,14 +122,22 @@ function renderDeck() {
   if (dragging || !state.deck) return;
   const byId = Object.fromEntries(state.matters.map((m) => [m.id, m]));
   const run = state.running;
+  const FIXED_NOTE = 'Set in the Stream Deck app.';
   $('#deck').innerHTML = state.deck
     .map((s) => {
       const at = `data-slot="${s.slot}" aria-label="Key ${s.slot + 1}`;
+      // Keys set to a specific action in the Stream Deck app mirror the device and can't be rearranged here.
+      const drag = s.fixed ? 'draggable="false"' : 'draggable="true"';
+      const fixedCls = s.fixed ? 'fixed' : '';
+      if (s.kind === 'none') {
+        return `<div class="key none" ${at}: not a deck-time key" title="This key isn't a deck-time action in the Stream Deck app."><span>Not deck-time</span></div>`;
+      }
       const m = s.kind === 'matter' ? byId[s.matter_id] : null;
       if (m) {
         const live = run?.matter_id === m.id;
         const ms = live ? state.now - run.start_ms : m.today_ms;
-        return `<button class="key ${live ? 'live' : ''}" style="--key-color:${esc(m.color)}" ${at}: ${esc(m.name)}" draggable="true" data-toggle="${m.id}" title="${esc(m.name)}. Click to ${live ? 'stop' : 'start'}; drag to move.">
+        const hint = s.fixed ? `${FIXED_NOTE} Click to ${live ? 'stop' : 'start'}.` : `Click to ${live ? 'stop' : 'start'}; drag to move.`;
+        return `<button class="key ${live ? 'live' : ''} ${fixedCls}" style="--key-color:${esc(m.color)}" ${at}: ${esc(m.name)}" ${drag} data-toggle="${m.id}" title="${esc(m.name)}. ${hint}">
           <span>${esc(m.label || m.name)}</span><span class="key-time">${ms ? clock(ms) : ''}</span><span class="bar"></span></button>`;
       }
       if (FUNCTION_KEYS[s.kind]) {
@@ -140,7 +148,7 @@ function renderDeck() {
         else if (s.kind === 'next-task' && run) sub = `Task ${run.tasks_today}`;
         else if (s.kind === 'stop') sub = `${state.total_hours.toFixed(1)}h`;
         const idle = (s.kind === 'dictate' || s.kind === 'next-task' || s.kind === 'stop') && !run && !cls;
-        return `<button class="key fn ${cls} ${idle ? 'idle' : ''}" ${at}: ${FUNCTION_KEYS[s.kind]}" draggable="true" data-fn="${s.kind}" title="${FUNCTION_KEYS[s.kind]}. Drag to move.">
+        return `<button class="key fn ${cls} ${idle ? 'idle' : ''} ${fixedCls}" ${at}: ${FUNCTION_KEYS[s.kind]}" ${drag} data-fn="${s.kind}" title="${FUNCTION_KEYS[s.kind]}. ${s.fixed ? FIXED_NOTE : 'Drag to move.'}">
           <span>${FUNCTION_KEYS[s.kind]}</span><span class="key-time">${sub}</span></button>`;
       }
       return `<button class="key empty" ${at}: empty" title="Drop a matter here"></button>`;

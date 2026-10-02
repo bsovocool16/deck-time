@@ -215,7 +215,10 @@ main { padding-top: 8px; padding-bottom: 96px; }
 .key.fn.idle { color: #6f6f6a; }
 .key.fn.recording { background: var(--danger); color: #fff; }
 .key.fn.recording .key-time { color: #fff; }
-.deck.placing .key { outline: 1px dashed var(--focus); outline-offset: 2px; cursor: copy; }
+.deck.placing .key:not(.fixed):not(.none) { outline: 1px dashed var(--focus); outline-offset: 2px; cursor: copy; }
+.key.fixed::after { content: ""; position: absolute; top: 7px; right: 7px; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0.45; }
+.key { position: relative; }
+.key.none { background: transparent; border: 1px solid var(--rule); color: var(--faint); font-weight: 400; font-size: 10.5px; justify-content: center; align-items: center; text-align: center; }
 .key.drop-hover, .neo-key.drop-hover { outline: 2px solid var(--focus) !important; outline-offset: 2px; }
 .deck-dragging .key.empty { border-color: var(--focus); }
 

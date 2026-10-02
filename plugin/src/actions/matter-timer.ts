@@ -1,6 +1,7 @@
 import streamDeck, { action, type KeyAction, type KeyDownEvent, type SendToPluginEvent, SingletonAction, type WillAppearEvent, type DidReceiveSettingsEvent, type WillDisappearEvent } from "@elgato/streamdeck";
 import type { JsonValue } from "@elgato/utils";
 import { companion, type State } from "../companion";
+import { updatePhysicalMatter } from "../physical";
 import { matterKey, messageKey } from "../render";
 
 type Settings = { matterId?: string };
@@ -30,6 +31,7 @@ export class MatterTimer extends SingletonAction<Settings> {
 
 	override onDidReceiveSettings(ev: DidReceiveSettingsEvent<Settings>): void {
 		this.#settings.set(ev.action.id, ev.payload.settings);
+		updatePhysicalMatter(ev.action.id, ev.payload.settings.matterId);
 		this.#renderAll();
 	}
 

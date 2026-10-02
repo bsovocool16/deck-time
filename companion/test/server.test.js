@@ -69,3 +69,30 @@ test('non-JSON posts are rejected', async () => {
 test('static files are served and traversal blocked', async () => {
   assert.equal((await fetch(base + '/../package.json')).status, 404);
 });
+
+test('deck mirrors what the Stream Deck reports; fixed keys cannot be rearranged', async () => {
+  const before = await (await api('/api/deck')).json();
+  assert.equal(before.some((s) => s.fixed), false); // nothing reported yet: pure layout
+
+  // Top row deck-time Keys; bottom row set directly to functions in the Stream Deck app.
+  const slots = [0, 1, 2, 3].map((slot) => ({ slot, kind: 'key' })).concat(
+    [['dictate', 4], ['next-task', 5], ['stop', 6], ['review', 7]].map(([kind, slot]) => ({ slot, kind })),
+  );
+  let r = await api('/api/deck/physical', { method: 'POST', body: { columns: 4, rows: 2, slots } });
+  assert.equal((await r.json()).keys, 8);
+  const deck = await (await api('/api/deck')).json();
+  assert.deepEqual(deck.slice(4).map((s) => [s.kind, s.fixed]), [['dictate', true], ['next-task', true], ['stop', true], ['review', true]]);
+  assert.equal(deck[0].fixed, false);
+
+  r = await api('/api/deck/5', { method: 'PUT', body: { kind: 'stop' } });
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /Key 6 is set to Next task in the Stream Deck app/);
+  r = await api('/api/deck/swap', { method: 'POST', body: { from: 0, to: 7 } });
+  assert.equal(r.status, 409);
+
+  // A position with no deck-time action at all shows as 'none'.
+  await api('/api/deck/physical', { method: 'POST', body: { columns: 4, rows: 2, slots: slots.filter((s) => s.slot !== 7) } });
+  const state = await (await api('/api/state')).json();
+  assert.equal(state.deck[7].kind, 'none');
+  assert.equal(state.deck[7].fixed, true);
+});
