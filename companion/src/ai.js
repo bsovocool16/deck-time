@@ -52,13 +52,13 @@ export async function draftNarrative({ config, matter, notes, hours, recent = []
 }
 
 async function ollamaChat({ config, messages, format, temperature = 0.2, fetchImpl }) {
-  const { baseUrl, model, keepAlive = '4h' } = config.ai;
+  const { baseUrl, model, keepAlive = '2m' } = config.ai;
   let res;
   try {
     res = await fetchImpl(`${baseUrl}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      // keep_alive: Ollama otherwise unloads the model after 5 idle minutes, and reloading costs ~15 s.
+      // keep_alive: free the model's memory shortly after use (deck-time should stay light).
       body: JSON.stringify({ model, messages, stream: false, format, keep_alive: keepAlive, options: { temperature } }),
       signal: AbortSignal.timeout(120_000),
     });
@@ -72,28 +72,6 @@ async function ollamaChat({ config, messages, format, temperature = 0.2, fetchIm
   }
   const data = await res.json();
   return data.message?.content ?? '';
-}
-
-/**
- * Load the model into memory ahead of time (no-op if it's already loaded), so
- * the first draft or code suggestion doesn't wait for it. Never throws.
- */
-export async function warmModel(config, fetchImpl = fetch) {
-  const { baseUrl, model, keepAlive = '4h' } = config.ai;
-  try {
-    const ps = await fetchImpl(`${baseUrl}/api/ps`, { signal: AbortSignal.timeout(2000) }).then((r) => r.json());
-    if (ps.models?.some((m) => m.name === model || m.name === `${model}:latest`)) return 'loaded';
-    // An empty prompt loads the model without generating anything.
-    await fetchImpl(`${baseUrl}/api/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, prompt: '', keep_alive: keepAlive }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    return 'warmed';
-  } catch {
-    return 'unavailable';
-  }
 }
 
 export async function aiStatus(config, fetchImpl = fetch) {

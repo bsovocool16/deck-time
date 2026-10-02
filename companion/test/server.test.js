@@ -96,3 +96,30 @@ test('deck mirrors what the Stream Deck reports; fixed keys cannot be rearranged
   assert.equal(state.deck[7].kind, 'none');
   assert.equal(state.deck[7].fixed, true);
 });
+
+test('codes are instant, need no AI, and exports teach the code memory', async () => {
+  const m = await (await api('/api/matters', { method: 'POST', body: { name: 'Coded', client_no: '555555', matter_no: '00001', code_set: 'counseling' } })).json();
+  const { today } = await (await api('/api/state')).json();
+  await api('/api/segments', { method: 'POST', body: { matter_id: m.id, start_ms: Date.now() - 30 * 60_000, end_ms: Date.now() - 20 * 60_000 } });
+
+  // Saving a narrative fills codes immediately (keyword rules; no model call).
+  const saved = await (await api(`/api/entries/${today}/${m.id}`, { method: 'PATCH', body: { narrative: 'Telephone conference with client regarding licensing.' } })).json();
+  assert.deepEqual([saved.task_code, saved.activity_code], ['C300', 'A106']);
+
+  const r = await (await api(`/api/entries/${today}/${m.id}/codes`, { method: 'POST', body: {} })).json();
+  assert.equal(r.code_source.activity, 'rules');
+
+  const before = (await (await api('/api/codes/memory')).json()).examples;
+  await api('/api/export', { method: 'POST', body: { date: today, markExported: true, force: true } });
+  const after = await (await api('/api/codes/memory')).json();
+  assert.ok(after.examples > before);
+  assert.ok(after.bySource.export >= 1);
+});
+
+test('importing past Intapp time teaches the code memory', async () => {
+  const sample = fs.readFileSync(new URL('../../docs/samples/intapp-export-coded.example.tim', import.meta.url), 'utf8');
+  const r = await (await api('/api/codes/import', { method: 'POST', body: { files: [sample] } })).json();
+  assert.equal(r.found, 1);
+  const bad = await api('/api/codes/import', { method: 'POST', body: { files: ['nothing here'] } });
+  assert.equal(bad.status, 400);
+});

@@ -197,6 +197,13 @@
         <label class="ai-only">Model <input name="ai.model" list="ai-models"><datalist id="ai-models"></datalist></label>
         <label class="wide ai-only">House style guide <textarea name="ai.styleGuide" rows="6"></textarea></label>
 
+        <h3>Task &amp; activity codes <span id="code-memory-status" class="status"></span></h3>
+        <p class="wide settings-note">Codes are suggested instantly from keyword rules and from how you've coded before: every export teaches deck-time, and you can give it a head start with past time exported from Intapp. Nothing here uses AI.</p>
+        <label class="wide">Import past time from Intapp (.TIM files with task and activity codes)
+          <input type="file" id="code-import" accept=".tim,.TIM,.txt" multiple>
+          <small>Export a few months of your time from Intapp Time and choose the files. Only narratives and codes are kept, in code-memory.jsonl in your data folder.</small>
+        </label>
+
         <h3 class="dictation-only">Dictation</h3>
         <label class="wide dictation-only">Words to listen for (comma-separated)
           <textarea name="dictation.vocabulary" rows="3" placeholder="Leave blank for built-in legal terms (disclosure schedules, indemnification, interrogatories…). Your matter names are always included."></textarea>

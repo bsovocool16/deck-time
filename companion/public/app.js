@@ -189,6 +189,26 @@ async function placeOnKey(slot, item) {
 
 $('#deck-search').addEventListener('input', () => renderSidebar(true));
 
+// ---------- code memory ----------
+
+function showCodeMemory(m) {
+  const imported = m.bySource?.import ?? 0;
+  const exported = m.bySource?.export ?? 0;
+  $('#code-memory-status').textContent = m.examples
+    ? `learned from ${m.examples.toLocaleString()} entr${m.examples === 1 ? 'y' : 'ies'} (${exported} exported, ${imported} imported)`
+    : 'using keyword rules until you export or import coded time';
+}
+
+$('#code-import').addEventListener('change', guard(async (ev) => {
+  const files = [...ev.target.files];
+  if (!files.length) return;
+  const texts = await Promise.all(files.map((f) => f.text()));
+  ev.target.value = '';
+  const r = await api('/api/codes/import', { method: 'POST', body: { files: texts } });
+  toast(`Learned from ${r.added.toLocaleString()} new coded entr${r.added === 1 ? 'y' : 'ies'}${r.found > r.added ? ` (${r.found - r.added} already known)` : ''}`);
+  showCodeMemory(r);
+}));
+
 // ---------- light / dark ----------
 
 const THEMES = ['auto', 'light', 'dark'];
@@ -590,6 +610,7 @@ async function renderSettings() {
   const pill = $('#tim-status');
   pill.className = 'status ' + (config.timekeeper.id ? 'ok' : 'warn');
   pill.textContent = config.timekeeper.id ? `Timekeeper ${config.timekeeper.id}` : 'Set a timekeeper ID or learn it from an export';
+  api('/api/codes/memory').then(showCodeMemory).catch(() => {});
   const ai = await api('/api/ai/status');
   const aiPill = $('#ai-status');
   aiPill.className = 'status ' + (ai.reachable && ai.installed ? 'ok' : 'bad');
@@ -669,7 +690,9 @@ document.addEventListener('click', guard(async (ev) => {
     t.textContent = 'Choosing…';
     try {
       await saveEntryField(entry, entry.querySelector('[name=narrative]'));
-      await api(`${entryPath(entry)}/codes`, { method: 'POST', body: {} });
+      const r = await api(`${entryPath(entry)}/codes`, { method: 'POST', body: {} });
+      const from = (s) => (s === 'rules' ? 'keyword rules' : s);
+      if (r.code_source) toast(`Codes from ${from(r.code_source.task)}${r.code_source.activity !== r.code_source.task ? ` and ${from(r.code_source.activity)}` : ''}`);
     } finally {
       await refreshDay(true);
     }

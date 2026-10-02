@@ -3,11 +3,12 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aiStatus, draftNarrative, normalizeSplit, proposeSplit, suggestCodes, warmModel } from './ai.js';
+import { aiStatus, draftNarrative, normalizeSplit, proposeSplit } from './ai.js';
+import { CodeMemory, examplesFromTim } from './coder.js';
 import { codesFor } from './codes.js';
 import { EXPORT_DIR, deepMerge } from './config.js';
 import { dictationPrompt } from './dictation.js';
-import { exportable, learnFromTim, toCsv, toTim, validateForTim } from './export.js';
+import { exportable, learnFromTim, parseTim, toCsv, toTim, validateForTim } from './export.js';
 import { httpError } from './store.js';
 import { isDate, localDate } from './time.js';
 
@@ -31,6 +32,7 @@ export function createServer({
   dictation = null,
   publicDir = DEFAULT_PUBLIC_DIR,
   workspace = null, // { get(), set(name), resetDemo() } when real/demo switching is available
+  coder = new CodeMemory(), // learned task/activity codes (see coder.js)
 }) {
   const clients = new Set();
   // What the Stream Deck plugin reports is actually on each key (in memory; the
@@ -71,13 +73,21 @@ export function createServer({
     workspace: workspace?.get() ?? 'real',
   });
   const aiOn = () => getConfig().features?.ai !== false;
-  // Load the model before it's needed: at startup and whenever a timer starts.
-  let warming = null;
-  const warm = () => {
-    if (!aiOn() || warming) return;
-    warming = warmModel(getConfig(), fetchImpl).finally(() => (warming = null));
+  const matterKey = (m) => [m.client_no, m.matter_no].filter(Boolean).join('.');
+  /** Instant codes for an entry: learned from your history, else keyword rules. No AI. */
+  const instantCodes = (matter, text) => {
+    const codes = codesFor(matter, getConfig());
+    return codes && text?.trim() ? coder.suggest(text, codes, { codeSet: matter.code_set, matter: matterKey(matter) }) : null;
   };
-  setTimeout(warm, 0);
+  /** Fill codes the entry doesn't have yet (never overwrites ones you chose). */
+  const fillMissingCodes = (date, matterId, part) => {
+    const matter = store.getMatter(matterId);
+    const e = store.getEntry(date, matterId, part);
+    if (!matter?.code_set || (e.task_code && e.activity_code)) return e;
+    const picked = instantCodes(matter, e.narrative || e.notes);
+    if (!picked) return e;
+    return store.updateEntry(date, matterId, { task_code: e.task_code || picked.task_code, activity_code: e.activity_code || picked.activity_code }, part);
+  };
   const requireAi = () => {
     if (!aiOn()) throw httpError(403, 'AI drafting is turned off in this edition. Write the narrative directly.');
   };
@@ -105,11 +115,7 @@ export function createServer({
     ['GET', /^\/api\/matters$/, (_, q) => store.listMatters({ includeArchived: q.get('all') === '1' })],
     ['POST', /^\/api\/matters$/, (b) => store.createMatter(b)],
     ['PATCH', /^\/api\/matters\/(\d+)$/, (b, _, [id]) => store.updateMatter(+id, b)],
-    ['POST', /^\/api\/timer\/toggle$/, (b) => {
-      const running = store.toggle(+b.matter_id);
-      if (running) warm(); // you'll likely want a draft or codes for this work later
-      return running;
-    }],
+    ['POST', /^\/api\/timer\/toggle$/, (b) => store.toggle(+b.matter_id)],
     ['POST', /^\/api\/timer\/stop$/, () => store.stop()],
     ['POST', /^\/api\/timer\/next-task$/, (b) => store.nextTask(b.label ? String(b.label) : '')],
     ['POST', /^\/api\/timer\/note$/, (b) => store.addNote(String(b.text ?? ''), b.matter_id ? +b.matter_id : undefined)],
@@ -119,7 +125,11 @@ export function createServer({
     ['PATCH', /^\/api\/segments\/(\d+)$/, (b, _, [id]) => store.updateSegment(+id, b)],
     ['DELETE', /^\/api\/segments\/(\d+)$/, (_, __, [id]) => store.deleteSegment(+id)],
     // Entries: /api/entries/:date/:matter[/:part] — part 0 (default) is the main entry.
-    ['PATCH', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?$/, (b, _, [date, id, part]) => store.updateEntry(date, +id, b, +(part ?? 0))],
+    ['PATCH', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?$/, (b, _, [date, id, part]) => {
+      const saved = store.updateEntry(date, +id, b, +(part ?? 0));
+      // A new or edited narrative on a coded matter gets codes right away if it has none.
+      return 'narrative' in b ? fillMissingCodes(date, +id, +(part ?? 0)) : saved;
+    }],
     ['DELETE', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/(\d+)$/, (_, __, [date, id, part]) => store.deletePart(date, +id, +part)],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/parts$/, (b, _, [date, id]) => store.addPart(date, +id, b)],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/narrate$/, async (_, __, [date, id, part]) => {
@@ -138,26 +148,27 @@ export function createServer({
         rules: store.rulesFor(matter),
         fetchImpl,
       });
-      const saved = store.updateEntry(date, matterId, { narrative }, p);
-      // Fill codes too, unless the user already chose them for this entry.
-      const codes = codesFor(matter, getConfig());
-      if (!codes || (saved.task_code && saved.activity_code)) return saved;
-      try {
-        return store.updateEntry(date, matterId, await suggestCodes({ config: getConfig(), narrative, codes, fetchImpl }), p);
-      } catch (e) {
-        console.warn(`code suggestion failed: ${e.message}`);
-        return saved;
-      }
+      store.updateEntry(date, matterId, { narrative }, p);
+      return fillMissingCodes(date, matterId, p); // instant, from your history or keyword rules
     }],
-    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/codes$/, async (_, __, [date, id, part]) => {
-      requireAi();
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/codes$/, (_, __, [date, id, part]) => {
       const matterId = +id;
       const p = +(part ?? 0);
-      const codes = codesFor(store.getMatter(matterId), getConfig());
-      if (!codes) throw httpError(400, 'This matter does not use task/activity codes');
+      const matter = store.getMatter(matterId);
+      if (!codesFor(matter, getConfig())) throw httpError(400, 'This matter does not use task/activity codes');
       const { narrative, notes } = store.getEntry(date, matterId, p);
-      const picked = await suggestCodes({ config: getConfig(), narrative: narrative || notes, codes, fetchImpl });
-      return store.updateEntry(date, matterId, picked, p);
+      const picked = instantCodes(matter, narrative || notes);
+      if (!picked) throw httpError(400, 'Write a narrative or notes first');
+      const saved = store.updateEntry(date, matterId, { task_code: picked.task_code, activity_code: picked.activity_code }, p);
+      return { ...saved, code_source: picked.source };
+    }],
+    ['GET', /^\/api\/codes\/memory$/, () => coder.stats()],
+    ['POST', /^\/api\/codes\/import$/, (b) => {
+      const files = Array.isArray(b.files) ? b.files : [String(b.text ?? '')];
+      const examples = files.flatMap((text) => examplesFromTim(parseTim(String(text)), 'import'));
+      if (!examples.length) throw httpError(400, 'No coded entries found. Choose .TIM files exported from Intapp Time that include task and activity codes.');
+      const added = coder.add(examples);
+      return { found: examples.length, added, ...coder.stats() };
     }],
     // Block billing: propose a split with the local model (not saved), then apply the reviewed version.
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/propose$/, async (_, __, [date, id]) => {
@@ -185,7 +196,7 @@ export function createServer({
           const item = { notes, narrative: '', hours: b.hours, task: b.task, range: [b.start, b.end] };
           if (notes && aiOn()) {
             item.narrative = await draftNarrative({ config, matter, notes, hours: b.hours, recent: store.recentNarratives(matterId), rules, fetchImpl });
-            if (codes) Object.assign(item, await suggestCodes({ config, narrative: item.narrative, codes, fetchImpl }).catch(() => ({})));
+            if (codes) Object.assign(item, instantCodes(matter, item.narrative));
           }
           entries.push(item);
         }
@@ -284,7 +295,15 @@ export function createServer({
     fs.mkdirSync(exportDir, { recursive: true });
     const savedTo = path.join(exportDir, filename);
     fs.writeFileSync(savedTo, body);
-    if (markExported) for (const e of entries) store.updateEntry(date, e.matter_id, { status: 'exported' });
+    if (markExported) for (const e of entries) store.updateEntry(date, e.matter_id, { status: 'exported' }, e.part);
+    // Every export teaches the code memory how you code (never from demo data).
+    if (workspace?.get() !== 'demo') {
+      coder.add(
+        entries
+          .filter((e) => e.task || e.activity)
+          .map((e) => ({ at: Date.now(), source: 'export', matter: matterKey(e.matter), code_set: e.matter.code_set, narrative: e.narrative, task: e.task || undefined, activity: e.activity || undefined })),
+      );
+    }
     return { filename, savedTo, count: entries.length, body };
   }
 

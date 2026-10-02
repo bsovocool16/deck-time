@@ -70,7 +70,9 @@ scripts/ollama-serve.sh &             # keeps models in ./models/ollama (gitigno
 ollama pull gemma3:12b                # any chat model works; set it in Settings
 ```
 
-Tune the house style guide and examples in **Settings**. Past narratives you
+Tune the house style guide and examples in **Settings**. Ollama unloads the
+model two minutes after use (`ai.keepAlive`), so it only takes memory while
+drafting. Past narratives you
 mark *ready* or *exported* on the same matter are fed back as style examples.
 
 ### Dictation (sox + whisper.cpp)
@@ -163,10 +165,21 @@ another matter and back continues the same task.
 
 For matters that require UTBMS codes, set **Task/activity codes** on the matter
 (Counseling or Litigation; edit or add sets under `codes` in
-`~/.deck-time/config.json`). Drafting a narrative also picks codes with the
-local model, constrained to the allowed list. Review them on the entry, or hit
-✨ **Suggest codes** again after editing the narrative. Matter defaults fill in
-anything left blank, and export refuses a coded matter with missing codes.
+`~/.deck-time/config.json`). Codes fill in **instantly, with no AI model**:
+
+- **Keyword rules** from day one: the entry's opening verb sets the activity
+  ("Reviewed…" A104, "Drafted…" A103, "Researched…" A102; calls by who's on
+  them: client A106, outside counsel A107, others A108), and topic words set
+  the task (interrogatories L310, privilege L320, research C200…).
+- **Your history** takes over as it builds. Every export appends its narratives
+  and codes to `code-memory.jsonl` in your data folder, and deck-time relearns a
+  small word-frequency table from that log (weighted toward the same matter).
+  Give it a head start in Settings → *Import past time from Intapp*: `.TIM`
+  exports already carry each narrative with its codes.
+
+Codes appear when a narrative is drafted, typed or dictated on a coded matter
+(never overwriting codes you set), and **Suggest codes** re-picks them. Export
+refuses a coded matter with missing codes. This works in the office edition too.
 
 ## Intapp Time `.TIM` format
 

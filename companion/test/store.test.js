@@ -305,7 +305,7 @@ test('suggestCodes rejects codes outside the list', async () => {
   await assert.rejects(suggestCodes({ config: DEFAULTS, narrative: 'x', codes, fetchImpl }), /unknown codes/);
 });
 
-test('Ollama requests keep the model loaded; code suggestions are deterministic', async () => {
+test('Ollama unloads the model soon after use; code suggestions are deterministic', async () => {
   const bodies = [];
   const fetchImpl = async (_u, opts) => {
     bodies.push(JSON.parse(opts.body));
@@ -313,6 +313,6 @@ test('Ollama requests keep the model loaded; code suggestions are deterministic'
   };
   const codes = { tasks: DEFAULTS.codes.taskSets.counseling.codes, activities: DEFAULTS.codes.activities };
   await suggestCodes({ config: DEFAULTS, narrative: 'Reviewed agreement.', codes, fetchImpl });
-  assert.equal(bodies[0].keep_alive, '4h');
+  assert.equal(bodies[0].keep_alive, '2m');
   assert.equal(bodies[0].options.temperature, 0);
 });

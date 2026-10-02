@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultHome, loadConfig, pathsFor, saveConfig } from './config.js';
+import { CodeMemory } from './coder.js';
 import { seedDemo } from './demo-seed.js';
 import { Dictation } from './dictation.js';
 import { createServer } from './server.js';
@@ -79,7 +80,8 @@ export async function startCompanion({ home = defaultHome(), edition = 'full', p
     ? new Dictation({ getConfig, onText: (text, ctx) => store.addNote(text, ctx.matterId, 'dictated', ctx.startedAt) })
     : null;
 
-  const server = createServer({ store, getConfig, setConfig, dictation, publicDir, exportDir: paths.exports, workspace });
+  const coder = new CodeMemory(paths.codeMemory);
+  const server = createServer({ store, getConfig, setConfig, dictation, publicDir, exportDir: paths.exports, workspace, coder });
   const listenPort = port ?? config.port;
   await new Promise((resolve, reject) => {
     server.once('error', reject);

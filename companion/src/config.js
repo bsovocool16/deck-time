@@ -20,6 +20,7 @@ export function pathsFor(home) {
     db: path.join(home, 'deck-time.db'),
     demoDb: path.join(home, 'demo.db'), // fictional matters for showing people; never mixed with real data
     exports: path.join(home, 'exports'),
+    codeMemory: path.join(home, 'code-memory.jsonl'), // narratives + codes you've exported or imported
   };
 }
 
@@ -65,7 +66,7 @@ export const DEFAULTS = {
     provider: 'ollama',
     baseUrl: 'http://127.0.0.1:11434',
     model: 'gemma3:12b',
-    keepAlive: '4h', // how long Ollama keeps the model loaded after a request (avoids ~15 s reloads)
+    keepAlive: '2m', // unload the model soon after use; it's ~9 GB in memory while loaded
     // House style the model should follow. Edit freely in Settings.
     styleGuide: [
       'Write in the past tense, starting each task with a verb (e.g., "Reviewed", "Drafted", "Conferred").',
