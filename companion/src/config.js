@@ -69,6 +69,13 @@ export const DEFAULTS = {
     check: true,
     checkHour: 5, // 5:00 AM
   },
+  // Record whether AI was used on each time entry (e.g. for California disclosure).
+  // Off by default; when on, each entry has an AI toggle starting at `default`.
+  aiUse: {
+    enabled: false,
+    default: 'no', // 'yes' | 'no'
+    timField: '', // .TIM field to write Y/N to (ask your Intapp admin); blank = CSV only
+  },
   dailyTarget: 8, // hours; shown as a progress bar on the page and the Neo info bar (0 = hide)
   rounding: {
     increment: 0.1, // hours

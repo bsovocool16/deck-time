@@ -82,6 +82,8 @@ export function timRecord(entry, config, { now = Date.now(), uuid = randomUUID }
   if (entry.jx) record.u1 = entry.jx; // jurisdiction chosen on the entry or matter; else the export default
   if (entry.task) record.u5 = entry.task;
   if (entry.activity) record.u6 = entry.activity;
+  const aiField = String(config.aiUse?.timField ?? '').trim();
+  if (aiField && typeof entry.ai === 'boolean') record[aiField] = entry.ai ? 'Y' : 'N';
   return record;
 }
 
@@ -120,6 +122,7 @@ const CSV_COLUMNS = [
   ['task_code', (e) => e.task ?? ''],
   ['activity_code', (e) => e.activity ?? ''],
   ['narrative', (e) => e.narrative],
+  ['ai_used', (e) => (e.ai == null ? '' : e.ai ? 'Y' : 'N')], // blank when AI-use tracking is off
 ];
 
 function csvCell(value) {

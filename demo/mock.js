@@ -17,6 +17,7 @@
     rounding: { increment: 0.1, mode: 'up', minimum: 0.1 },
     overnight: { workdayEnds: 0, check: true, checkHour: 5 },
     dailyTarget: 8,
+    aiUse: { enabled: false, default: 'no', timField: '' },
     ai: {
       provider: 'demo',
       baseUrl: 'on this Mac (simulated here)',
@@ -268,7 +269,7 @@
     db.entries.set(key(date, matterId, part), { ...getEntry(date, matterId, part), ...e, date, matter_id: +matterId, part });
   }
 
-  const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'status'];
+  const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'ai_used', 'status'];
   const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o?.[k] !== undefined).map((k) => [k, o[k]]));
 
   function updateEntry(date, matterId, input, part = 0) {
@@ -341,6 +342,7 @@
           rules,
           task: usesCodes ? row.task_code || matter.task_code : '',
           activity: usesCodes ? row.activity_code || matter.activity_code : '',
+          ai: config.aiUse?.enabled ? (row.ai_used || config.aiUse.default) === 'yes' : null,
           raw_ms: isMain ? rawMs : 0,
           computed_hours: computed,
           split_hours: splitHours,

@@ -155,6 +155,10 @@ about a millisecond, and they never add facts that aren't in your notes:
 The design principle: no model in the click path. A model can later act as an
 offline teacher that reviews accumulated corrections and proposes rules.
 
+## AI use disclosure
+
+For billing rules that require disclosing AI use, such as California's, turn on **Settings → AI use → Record whether AI was used on each time entry**. Then choose the default for new entries: **No AI** or **AI used**. Each entry gets an **AI** checkbox that starts at the default, and split entries inherit the answer from the entry they came from. The CSV export adds an `ai_used` column (Y/N). For .TIM files, enter the Intapp field your firm uses for this (ask your Intapp administrator); deck-time writes Y/N there. Leave it blank and nothing is added to .TIM files.
+
 ## Daily target
 
 A bar next to today's total on the page fills toward your daily target (8 hours by default, set in **Settings → Timekeeper**). It turns green when you hit the target. Set the target to 0 to hide the bar. The Neo info bar shows the running timer next to today's total (`0:42:10 · 5.3h`).

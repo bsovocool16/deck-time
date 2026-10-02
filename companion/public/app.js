@@ -545,6 +545,13 @@ function matterTitle(m) {
     : `<span class="name">${esc(m.name)}</span>`;
 }
 
+/** AI-use toggle (Settings → AI use). Starts at the default until you change it on the entry. */
+function aiToggle(e) {
+  if (e.ai == null) return '';
+  const how = e.ai_used ? 'set on this entry' : `default (${config.aiUse.default === 'yes' ? 'AI used' : 'no AI'})`;
+  return `<label class="ai-toggle ${e.ai ? 'on' : ''}" title="AI used on this entry? ${how}"><input type="checkbox" name="ai_used" ${e.ai ? 'checked' : ''}> AI</label>`;
+}
+
 /** Jurisdiction codes from Settings ("007 = New York"), plus the export default if it isn't listed. */
 function jurisdictions() {
   const list = [];
@@ -591,6 +598,7 @@ function entryCard(e) {
         <span class="spacer"></span>
         ${main ? `<span class="raw" title="Raw timer time">${clock(e.raw_ms)}</span>` : ''}
         ${jxSelect(e)}
+        ${aiToggle(e)}
         <input class="hours" type="number" step="0.1" min="0" name="hours" value="${e.hours.toFixed(1)}" title="${main ? 'Billable hours (edit to override)' : 'Hours for this split entry'}">
         <select name="status">
           ${['draft', 'ready', 'exported'].map((s) => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}
@@ -763,8 +771,10 @@ async function renderSettings() {
   for (const el of $('#settings-form').elements) {
     if (!el.name) continue;
     const v = getPath(config, el.name);
-    el.value = el.name === 'tim.defaults' ? Object.entries(v).map(([k, x]) => `${k}=${x}`).join('\n') : String(v ?? '');
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = el.name === 'tim.defaults' ? Object.entries(v).map(([k, x]) => `${k}=${x}`).join('\n') : String(v ?? '');
   }
+  showAiUseDetail();
   const pill = $('#tim-status');
   pill.className = 'status ' + (config.timekeeper.id ? 'ok' : 'warn');
   pill.textContent = config.timekeeper.id ? `Timekeeper ${config.timekeeper.id}` : 'Set a timekeeper ID or learn it from an export';
@@ -918,7 +928,10 @@ document.addEventListener('click', guard(async (ev) => {
 }));
 
 async function saveEntryField(entry, el) {
-  const body = el.name === 'hours' ? { hours_override: el.value === '' ? null : +el.value } : { [el.name]: el.value };
+  const body =
+    el.name === 'hours' ? { hours_override: el.value === '' ? null : +el.value }
+    : el.name === 'ai_used' ? { ai_used: el.checked ? 'yes' : 'no' }
+    : { [el.name]: el.value };
   await api(entryPath(entry), { method: 'PATCH', body });
 }
 
@@ -1058,12 +1071,18 @@ $('#matter-form').addEventListener('submit', guard(async (ev) => {
   renderMatters();
 }));
 
+// The default and .TIM field only matter once AI-use tracking is on.
+function showAiUseDetail() {
+  for (const el of document.querySelectorAll('.ai-use-detail')) el.hidden = !$('#ai-use-enabled').checked;
+}
+$('#ai-use-enabled').addEventListener('change', showAiUseDetail);
+
 $('#settings-form').addEventListener('submit', guard(async (ev) => {
   ev.preventDefault();
   const next = {};
   for (const el of ev.target.elements) {
     if (!el.name) continue;
-    let v = el.value;
+    let v = el.type === 'checkbox' ? el.checked : el.value;
     if (el.type === 'number' || el.dataset.type === 'number') v = +v;
     if (el.dataset.type === 'bool') v = v === 'true';
     if (el.name === 'tim.defaults') v = parseKeyValues(v);
@@ -1073,6 +1092,7 @@ $('#settings-form').addEventListener('submit', guard(async (ev) => {
   fillJurisdictionOptions();
   toast('Settings saved');
   renderSettings();
+  refreshDay(true); // e.g. AI toggles appear or disappear on entries
 }));
 
 // Keyboard: 1–8 press the matching key (when not typing).

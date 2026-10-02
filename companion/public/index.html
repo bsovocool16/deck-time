@@ -201,6 +201,18 @@
         <p class="wide hint">deck-time runs whenever the Stream Deck app is running, so the app is always ready.</p>
       </div>
       <form id="settings-form" class="grid-form">
+        <h3>AI use</h3>
+        <label class="check wide"><input type="checkbox" name="aiUse.enabled" id="ai-use-enabled"> Record whether AI was used on each time entry</label>
+        <p class="wide settings-note">For rules that require disclosing AI use in billing, such as California's. Each entry gets an AI toggle, and the CSV export gets an "ai_used" column (Y/N).</p>
+        <label class="ai-use-detail">Default for new entries
+          <select name="aiUse.default">
+            <option value="no">No AI</option>
+            <option value="yes">AI used</option>
+          </select>
+        </label>
+        <label class="ai-use-detail">.TIM field <input name="aiUse.timField" placeholder="e.g. u3" spellcheck="false" class="mono"
+          title="The Intapp field your firm uses for AI disclosure, if any. Ask your Intapp administrator. Blank: not written to .TIM files."></label>
+
         <h3>Timekeeper</h3>
         <label>Timekeeper ID <input name="timekeeper.id"></label>
         <label>Name <input name="timekeeper.name"></label>

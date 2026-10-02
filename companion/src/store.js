@@ -79,7 +79,8 @@ CREATE INDEX IF NOT EXISTS note_events_day ON note_events(date, matter_id);
 
 const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'block_billing', 'guidelines', 'jurisdiction', 'archived'];
 const CLIENT_FIELDS = ['name', 'no_block_billing', 'guidelines'];
-const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'draft', 'jurisdiction', 'status'];
+const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'draft', 'jurisdiction', 'ai_used', 'status'];
+const AI_USED = new Set(['', 'yes', 'no']);
 const STATUSES = new Set(['draft', 'ready', 'exported']);
 const BLOCK_BILLING = new Set(['', 'allowed', 'prohibited']);
 export const DECK_KINDS = new Set(['matter', 'dictate', 'next-task', 'stop', 'review', 'empty']);
@@ -97,6 +98,7 @@ const MIGRATIONS = [
   ['matters', 'jurisdiction', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'jurisdiction', "TEXT NOT NULL DEFAULT ''"],
   ['segments', 'confirmed', 'INTEGER NOT NULL DEFAULT 0'], // overnight check answered
+  ['entries', 'ai_used', "TEXT NOT NULL DEFAULT ''"], // '' = the Settings default, 'yes' | 'no' = set on the entry
 ];
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -495,7 +497,7 @@ export class Store extends EventEmitter {
     const row = this.db.prepare('SELECT * FROM entries WHERE date = ? AND matter_id = ? AND part = ?').get(date, matterId, part);
     return row
       ? plain(row)
-      : { date, matter_id: matterId, part, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', jurisdiction: '', status: 'draft', exported_at: null };
+      : { date, matter_id: matterId, part, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', jurisdiction: '', ai_used: '', status: 'draft', exported_at: null };
   }
 
   #parts(date, matterId) {
@@ -509,6 +511,7 @@ export class Store extends EventEmitter {
     }
     const patch = pick(input, ENTRY_FIELDS);
     if (patch.status && !STATUSES.has(patch.status)) throw httpError(400, 'Invalid status');
+    if ('ai_used' in patch && !AI_USED.has(patch.ai_used)) throw httpError(400, "ai_used must be 'yes', 'no' or '' (use the default)");
     if (part > 0 && 'hours_override' in patch && !(patch.hours_override > 0)) throw httpError(400, 'Split entries need hours');
     const next = { ...this.getEntry(date, matterId, part), ...patch };
     if (patch.status === 'exported') next.exported_at = this.now();
@@ -520,15 +523,15 @@ export class Store extends EventEmitter {
   #write(date, matterId, part, e) {
     this.db
       .prepare(
-        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, draft, jurisdiction, status, exported_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, draft, jurisdiction, ai_used, status, exported_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (date, matter_id, part) DO UPDATE SET
            notes = excluded.notes, narrative = excluded.narrative, hours_override = excluded.hours_override,
            task_code = excluded.task_code, activity_code = excluded.activity_code, draft = excluded.draft,
-           jurisdiction = excluded.jurisdiction,
+           jurisdiction = excluded.jurisdiction, ai_used = excluded.ai_used,
            status = excluded.status, exported_at = excluded.exported_at, updated_at = excluded.updated_at`,
       )
-      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.draft ?? '', e.jurisdiction ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
+      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.draft ?? '', e.jurisdiction ?? '', e.ai_used ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
   }
 
   /** Split off a new entry for the same matter/day. Its hours come out of the main entry's. */
@@ -538,7 +541,7 @@ export class Store extends EventEmitter {
     if (!(hours > 0)) throw httpError(400, 'Split entries need hours');
     if (!this.#parts(date, matterId).some((p) => p.part === 0)) this.#write(date, matterId, 0, {});
     const { next } = this.db.prepare('SELECT COALESCE(MAX(part), 0) + 1 AS next FROM entries WHERE date = ? AND matter_id = ?').get(date, matterId);
-    this.#write(date, matterId, next, { ...pick(input, ENTRY_FIELDS), hours_override: hours, status: 'draft' });
+    this.#write(date, matterId, next, { ai_used: this.getEntry(date, matterId, 0).ai_used, ...pick(input, ENTRY_FIELDS), hours_override: hours, status: 'draft' });
     this.emitChange();
     return this.getEntry(date, matterId, next);
   }
@@ -575,7 +578,8 @@ export class Store extends EventEmitter {
         status: 'draft',
       });
       rest.forEach((item, i) => {
-        this.#write(date, matterId, i + 1, { ...pick(item, ['notes', 'narrative', 'task_code', 'activity_code', 'draft']), hours_override: round2(Number(item.hours)), status: 'draft' });
+        // Split entries keep the AI-use answer given on the entry they came from.
+        this.#write(date, matterId, i + 1, { ai_used: main.ai_used ?? '', ...pick(item, ['notes', 'narrative', 'task_code', 'activity_code', 'draft', 'ai_used']), hours_override: round2(Number(item.hours)), status: 'draft' });
       });
       this.db.exec('COMMIT');
     } catch (e) {
@@ -591,6 +595,7 @@ export class Store extends EventEmitter {
     const [start, end] = this.bounds(date);
     const now = this.now();
     const rounding = this.getConfig().rounding;
+    const aiUse = this.getConfig().aiUse;
     const rawByMatter = new Map();
     for (const s of this.segmentsForDay(date)) {
       const ms = Math.min(s.end_ms ?? now, end) - Math.max(s.start_ms, start);
@@ -619,6 +624,8 @@ export class Store extends EventEmitter {
           rules,
           // Effective codes: the entry's own, else the matter default; none if the matter doesn't use codes.
           jx: row.jurisdiction || matter.jurisdiction || '', // '' = firm default at export
+          // AI-use disclosure (Settings → AI use): the entry's answer, else the default; null when tracking is off.
+          ai: aiUse?.enabled ? (row.ai_used || aiUse.default) === 'yes' : null,
           task: usesCodes ? row.task_code || matter.task_code : '',
           activity: usesCodes ? row.activity_code || matter.activity_code : '',
           raw_ms: isMain ? rawMs : 0,

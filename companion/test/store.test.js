@@ -491,3 +491,28 @@ test('findWebApps finds an installed deck-time web app by its address', { skip: 
   assert.deepEqual(await findWebApps('http://127.0.0.1:7331', [dir]), ['com.apple.Safari.WebApp.TEST']);
   assert.deepEqual(await findWebApps('http://127.0.0.1:7999', [dir]), []);
 });
+
+test('AI use: off by default; when on, entries take the default unless set, and splits keep it', () => {
+  let cfg = DEFAULTS;
+  const store = new Store(':memory:', () => cfg, () => new Date(2026, 8, 29, 9, 0).getTime());
+  const a = store.createMatter({ name: 'Alpha', client_no: '1', matter_no: '1' });
+  store.toggle(a.id);
+  const date = '2026-09-29';
+  const main = () => store.day(date).entries.find((e) => e.part === 0);
+  assert.equal(main().ai, null);
+
+  cfg = { ...DEFAULTS, aiUse: { enabled: true, default: 'yes', timField: 'u3' } };
+  assert.equal(main().ai, true);
+  store.updateEntry(date, a.id, { ai_used: 'no', narrative: 'Reviewed agreement.' });
+  assert.equal(main().ai, false);
+  assert.throws(() => store.updateEntry(date, a.id, { ai_used: 'maybe' }), /ai_used/);
+
+  const part = store.addPart(date, a.id, { hours: 0.1, narrative: 'Call.' });
+  assert.equal(store.day(date).entries.find((e) => e.part === part.part).ai, false);
+
+  const rec = parseTim(toTim([{ ...main(), hours: 1 }], { ...cfg, timekeeper: { id: '9' }, tim: DEFAULTS.tim }))[0];
+  assert.equal(rec.u3, 'N');
+  assert.match(toCsv([{ ...main(), hours: 1 }]), /ai_used\r\n.*,N\r\n$/);
+  const noField = parseTim(toTim([{ ...main(), hours: 1 }], { ...cfg, aiUse: { ...cfg.aiUse, timField: '' }, timekeeper: { id: '9' }, tim: DEFAULTS.tim }))[0];
+  assert.equal(noField.u3, undefined);
+});
