@@ -79,6 +79,7 @@ export function timRecord(entry, config, { now = Date.now(), uuid = randomUUID }
     ref: uuid(),
     ss: `${config.tim.ssPrefix}${pad(am, 6)}`,
   };
+  if (entry.jx) record.u1 = entry.jx; // jurisdiction chosen on the entry or matter; else the export default
   if (entry.task) record.u5 = entry.task;
   if (entry.activity) record.u6 = entry.activity;
   return record;

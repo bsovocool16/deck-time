@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS matters (
   activity_code TEXT NOT NULL DEFAULT '',
   code_set      TEXT NOT NULL DEFAULT '',   -- '' = no task/activity codes; else a key in config.codes.taskSets
   block_billing TEXT NOT NULL DEFAULT '',   -- '' = inherit from client | 'allowed' | 'prohibited'
+  jurisdiction  TEXT NOT NULL DEFAULT '',   -- Intapp u1 code; '' = firm default
   guidelines    TEXT NOT NULL DEFAULT '',   -- matter-specific billing instructions (added to the client's)
   archived      INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL
@@ -50,6 +51,7 @@ CREATE TABLE IF NOT EXISTS entries (
   task_code      TEXT NOT NULL DEFAULT '',   -- blank = use the matter's default
   activity_code  TEXT NOT NULL DEFAULT '',
   draft          TEXT NOT NULL DEFAULT '',   -- last instant draft, to learn from your edits
+  jurisdiction   TEXT NOT NULL DEFAULT '',   -- Intapp u1 code; '' = the matter's
   status         TEXT NOT NULL DEFAULT 'draft',  -- draft | ready | exported
   exported_at    INTEGER,
   updated_at     INTEGER NOT NULL,
@@ -75,9 +77,9 @@ CREATE TABLE IF NOT EXISTS note_events (
 CREATE INDEX IF NOT EXISTS note_events_day ON note_events(date, matter_id);
 `;
 
-const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'block_billing', 'guidelines', 'archived'];
+const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'block_billing', 'guidelines', 'jurisdiction', 'archived'];
 const CLIENT_FIELDS = ['name', 'no_block_billing', 'guidelines'];
-const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'draft', 'status'];
+const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'draft', 'jurisdiction', 'status'];
 const STATUSES = new Set(['draft', 'ready', 'exported']);
 const BLOCK_BILLING = new Set(['', 'allowed', 'prohibited']);
 export const DECK_KINDS = new Set(['matter', 'dictate', 'next-task', 'stop', 'review', 'empty']);
@@ -92,6 +94,8 @@ const MIGRATIONS = [
   ['entries', 'task_code', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'activity_code', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'draft', "TEXT NOT NULL DEFAULT ''"],
+  ['matters', 'jurisdiction', "TEXT NOT NULL DEFAULT ''"],
+  ['entries', 'jurisdiction', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -465,7 +469,7 @@ export class Store extends EventEmitter {
     const row = this.db.prepare('SELECT * FROM entries WHERE date = ? AND matter_id = ? AND part = ?').get(date, matterId, part);
     return row
       ? plain(row)
-      : { date, matter_id: matterId, part, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', status: 'draft', exported_at: null };
+      : { date, matter_id: matterId, part, notes: '', narrative: '', hours_override: null, task_code: '', activity_code: '', jurisdiction: '', status: 'draft', exported_at: null };
   }
 
   #parts(date, matterId) {
@@ -490,14 +494,15 @@ export class Store extends EventEmitter {
   #write(date, matterId, part, e) {
     this.db
       .prepare(
-        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, draft, status, exported_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, draft, jurisdiction, status, exported_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (date, matter_id, part) DO UPDATE SET
            notes = excluded.notes, narrative = excluded.narrative, hours_override = excluded.hours_override,
            task_code = excluded.task_code, activity_code = excluded.activity_code, draft = excluded.draft,
+           jurisdiction = excluded.jurisdiction,
            status = excluded.status, exported_at = excluded.exported_at, updated_at = excluded.updated_at`,
       )
-      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.draft ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
+      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.draft ?? '', e.jurisdiction ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
   }
 
   /** Split off a new entry for the same matter/day. Its hours come out of the main entry's. */
@@ -587,6 +592,7 @@ export class Store extends EventEmitter {
           matter,
           rules,
           // Effective codes: the entry's own, else the matter default; none if the matter doesn't use codes.
+          jx: row.jurisdiction || matter.jurisdiction || '', // '' = firm default at export
           task: usesCodes ? row.task_code || matter.task_code : '',
           activity: usesCodes ? row.activity_code || matter.activity_code : '',
           raw_ms: isMain ? rawMs : 0,

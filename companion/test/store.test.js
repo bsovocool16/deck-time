@@ -316,3 +316,22 @@ test('Ollama unloads the model soon after use; code suggestions are deterministi
   assert.equal(bodies[0].keep_alive, '2m');
   assert.equal(bodies[0].options.temperature, 0);
 });
+
+test('jurisdiction: entry overrides matter, matter overrides the export default', () => {
+  const { store, clock } = setup();
+  const a = store.createMatter({ name: 'NY deal', client_no: '1', matter_no: '1', jurisdiction: '012' });
+  const b = store.createMatter({ name: 'Default', client_no: '2', matter_no: '2' });
+  for (const id of [a.id, b.id]) {
+    store.toggle(id);
+    clock.advance(6 * MIN);
+  }
+  store.stop();
+  store.updateEntry('2026-09-29', a.id, { narrative: 'Reviewed.', jurisdiction: '031' });
+  store.updateEntry('2026-09-29', b.id, { narrative: 'Reviewed.' });
+  const cfg = { ...DEFAULTS, timekeeper: { id: '10001', name: '' } };
+  const recs = parseTim(toTim(store.day('2026-09-29').entries, cfg));
+  const byClient = Object.fromEntries(recs.map((r) => [r.cl, r.u1]));
+  assert.deepEqual(byClient, { 1: '031', 2: DEFAULTS.tim.defaults.u1 });
+  store.updateEntry('2026-09-29', a.id, { jurisdiction: '' });
+  assert.equal(parseTim(toTim(store.day('2026-09-29').entries, cfg)).find((r) => r.cl === '1').u1, '012');
+});

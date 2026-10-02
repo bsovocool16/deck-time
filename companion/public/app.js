@@ -450,6 +450,37 @@ function codeRow(e) {
   </div>`;
 }
 
+/** "Acme Project Pike | Acme / Globex Merger" when the key label differs from the name. */
+function matterTitle(m) {
+  const short = (m.label || '').trim();
+  return short && short.toLowerCase() !== m.name.toLowerCase()
+    ? `<span class="name">${esc(short)}</span><span class="name-sep" aria-hidden="true">|</span><span class="full-name">${esc(m.name)}</span>`
+    : `<span class="name">${esc(m.name)}</span>`;
+}
+
+/** Jurisdiction codes from Settings ("007 = New York"), plus the export default if it isn't listed. */
+function jurisdictions() {
+  const list = [];
+  for (const line of String(config?.jurisdictions ?? '').split('\n')) {
+    const m = line.match(/^\s*([^=#]+?)\s*=\s*(.+?)\s*$/);
+    if (m) list.push({ code: m[1], name: m[2] });
+  }
+  const dflt = config?.tim?.defaults?.u1;
+  if (dflt && !list.some((j) => j.code === dflt)) list.unshift({ code: dflt, name: '' });
+  return list;
+}
+const jxLabel = (j) => (j.name ? `${j.code} · ${j.name}` : j.code);
+
+function jxSelect(e) {
+  const list = jurisdictions();
+  const fallback = e.matter.jurisdiction || config?.tim?.defaults?.u1 || '';
+  const fallbackName = list.find((j) => j.code === fallback)?.name;
+  const opts = [`<option value="">JX ${esc(fallback || '—')}${fallbackName ? ` · ${esc(fallbackName)}` : ''}${e.matter.jurisdiction ? ' (matter)' : ''}</option>`]
+    .concat(list.map((j) => `<option value="${esc(j.code)}" ${e.jurisdiction === j.code ? 'selected' : ''}>JX ${esc(jxLabel(j))}</option>`))
+    .join('');
+  return `<select name="jurisdiction" class="jx" title="Jurisdiction (Intapp u1). Blank uses the matter's, then the firm default.">${opts}</select>`;
+}
+
 function rulesBadge(e) {
   if (!e.rules.no_block_billing && !e.rules.guidelines) return '';
   const tip = esc([e.rules.no_block_billing ? `No block billing (${e.rules.source} rule)` : '', e.rules.guidelines].filter(Boolean).join('\n'));
@@ -467,11 +498,12 @@ function entryCard(e) {
   return `
     <div class="entry status-${e.status} ${main ? '' : 'part'}" style="--key-color:${esc(e.matter.color)}" data-matter="${e.matter_id}" data-part="${e.part}">
       <div class="entry-head">
-        ${main ? `<span class="name">${esc(e.matter.name)}</span><span class="cm">${esc(clientMatter(e.matter))}</span>${rulesBadge(e)}` : `<span class="part-label">Split entry ${e.part}</span>`}
+        ${main ? `${matterTitle(e.matter)}<span class="cm">${esc(clientMatter(e.matter))}</span>${rulesBadge(e)}` : `<span class="part-label">Split entry ${e.part}</span>`}
         ${e.running ? '<span class="live-badge">Running</span>' : ''}
         ${e.block_warning ? '<span class="warn-badge" title="This client prohibits block billing">looks block-billed</span>' : ''}
         <span class="spacer"></span>
         ${main ? `<span class="raw" title="Raw timer time">${clock(e.raw_ms)}</span>` : ''}
+        ${jxSelect(e)}
         <input class="hours" type="number" step="0.1" min="0" name="hours" value="${e.hours.toFixed(1)}" title="${main ? 'Billable hours (edit to override)' : 'Hours for this split entry'}">
         <select name="status">
           ${['draft', 'ready', 'exported'].map((s) => `<option ${s === e.status ? 'selected' : ''}>${s}</option>`).join('')}
@@ -486,7 +518,7 @@ function entryCard(e) {
         ${main && e.hours_override != null ? '<button data-action="reset-hours">Use timer hours</button>' : ''}
         ${config?.codes.taskSets[e.matter.code_set] ? '<button data-action="codes" title="Let the local AI pick codes from the narrative">Suggest codes</button>' : ''}
         ${main ? '<button data-action="add-part" title="Split off a separate entry by hand">Add split</button>' : ''}
-        ${main && (e.rules.no_block_billing || e.parts > 1) ? '<button data-action="propose-split" title="Let the local AI split the day into one entry per task">Split into tasks</button>' : ''}
+        ${main ? '<button data-action="propose-split" title="Split the day into one entry per task: exact times from Next task marks, or one entry per clause of your notes">Split into tasks</button>' : ''}
         <button data-action="draft">Draft narrative</button>
       </div>
     </div>`;
@@ -728,9 +760,14 @@ document.addEventListener('click', guard(async (ev) => {
     t.textContent = 'Splitting…';
     try {
       await saveEntryField(entry, entry.querySelector('[name=notes]'));
-      proposals[entry.dataset.matter] = await api(`/api/entries/${day}/${entry.dataset.matter}/split/propose`, { method: 'POST', body: {} });
-    } finally {
+      const p = await api(`/api/entries/${day}/${entry.dataset.matter}/split/propose`, { method: 'POST', body: {} });
+      proposals[entry.dataset.matter] = p;
       await refreshDay(true);
+      toast(`Proposed ${p.entries.length} entries${p.mode === 'tasks' ? ' from your task breaks' : ''}. Review them below, then apply.`);
+      document.querySelector(`[data-proposal="${entry.dataset.matter}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } finally {
+      t.disabled = false;
+      t.textContent = 'Split into tasks';
     }
     return;
   }
@@ -918,7 +955,8 @@ $('#settings-form').addEventListener('submit', guard(async (ev) => {
     if (el.name === 'tim.defaults') v = parseKeyValues(v);
     setPath(next, el.name, v);
   }
-  await api('/api/config', { method: 'PUT', body: next });
+  config = await api('/api/config', { method: 'PUT', body: next });
+  fillJurisdictionOptions();
   toast('Settings saved');
   renderSettings();
 }));
@@ -946,7 +984,14 @@ api('/api/config')
     connect();
   });
 
+function fillJurisdictionOptions() {
+  const sel = $('#matter-form [name=jurisdiction]');
+  const dflt = config?.tim?.defaults?.u1;
+  sel.innerHTML = `<option value="">Firm default${dflt ? ` (${esc(dflt)})` : ''}</option>` + jurisdictions().map((j) => `<option value="${esc(j.code)}">${esc(jxLabel(j))}</option>`).join('');
+}
+
 function fillCodeSetOptions() {
+  fillJurisdictionOptions();
   const sets = config?.codes.taskSets ?? {};
   $('#matter-form [name=code_set]').innerHTML =
     '<option value="">None</option>' + Object.entries(sets).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join('');

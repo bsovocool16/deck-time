@@ -611,7 +611,7 @@
 
   function seed() {
     blank();
-    const acme = createMatter({ name: 'Acme / Globex Merger', label: 'Acme M&A', client_no: '10234', matter_no: '0007', color: '#2f5d8a', code_set: 'counseling', script: 'acme' });
+    const acme = createMatter({ name: 'Acme / Globex Merger', label: 'Acme M&A', client_no: '10234', matter_no: '0007', color: '#2f5d8a', script: 'acme' });
     const initech = createMatter({ name: 'Initech Credit Facility', label: 'Initech Loan', client_no: '20411', matter_no: '0002', color: '#3f7d52', script: 'initech' });
     const umbrella = createMatter({ name: 'Umbrella v. Hooli', label: 'Umbrella Lit.', client_no: '30877', matter_no: '0015', color: '#9a3b36', code_set: 'litigation', script: 'umbrella' });
     const stark = createMatter({ name: 'Stark Industries Board', label: 'Stark Board', client_no: '41120', matter_no: '0001', color: '#6b4f8a', script: 'stark' });

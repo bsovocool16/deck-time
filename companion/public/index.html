@@ -146,6 +146,7 @@
         </label>
         <label>Default task code <input name="task_code" placeholder="C300"></label>
         <label>Default activity code <input name="activity_code" placeholder="A104"></label>
+        <label>Jurisdiction (JX) <select name="jurisdiction"></select></label>
         <label class="wide">Matter guidelines <textarea name="guidelines" rows="2" placeholder="Added to the client's guidelines"></textarea></label>
         <div class="form-actions">
           <button type="submit" class="primary">Save matter</button>
@@ -186,6 +187,11 @@
         <h3>Timekeeper</h3>
         <label>Timekeeper ID <input name="timekeeper.id"></label>
         <label>Name <input name="timekeeper.name"></label>
+
+        <label class="wide">Jurisdictions (JX), one per line
+          <textarea name="jurisdictions" rows="3" spellcheck="false" class="mono" placeholder="007 = New York&#10;012 = Delaware"></textarea>
+          <small>Intapp's jurisdiction codes (field u1). Each entry has a JX dropdown; blank uses the matter's, then the default from your Intapp export.</small>
+        </label>
 
         <h3>Rounding</h3>
         <label>Increment (hours) <input name="rounding.increment" type="number" step="0.05" min="0.05"></label>

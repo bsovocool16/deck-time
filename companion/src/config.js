@@ -55,6 +55,7 @@ export const DEFAULTS = {
     vocabulary: '', // comma-separated words to help transcription; blank = built-in legal terms
   },
   phrasebook: '', // your shorthand, one per line: "officer cert = officer's certificate"
+  jurisdictions: '', // Intapp jurisdiction (u1) codes, one per line: "007 = New York"
   timekeeper: {
     id: '',
     name: '',

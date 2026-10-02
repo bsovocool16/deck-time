@@ -273,6 +273,10 @@ main { padding-top: 8px; padding-bottom: 96px; }
 .entry-head .name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .entry-head .name::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--key-color); flex: none; }
 .entry-head .cm { color: var(--muted); font-size: 12px; }
+.entry-head .name { white-space: nowrap; }
+.entry-head .name-sep { color: var(--faint); font-weight: 400; }
+.entry-head .full-name { color: var(--ink-2); font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.entry-head select.jx { width: auto; max-width: 180px; font-size: 12.5px; }
 .entry-head .spacer { flex: 1; }
 .entry-head .raw { color: var(--faint); font-family: var(--mono); font-size: 12px; }
 .entry-head .hours { width: 64px; text-align: right; font-weight: 600; }

@@ -4,7 +4,7 @@
 const MIN = 60_000;
 
 const MATTERS = [
-  { name: 'Acme / Globex Merger', label: 'Acme M&A', client_no: '10234', matter_no: '0007', color: '#2f5d8a', code_set: 'counseling' },
+  { name: 'Acme / Globex Merger', label: 'Acme M&A', client_no: '10234', matter_no: '0007', color: '#2f5d8a' }, // M&A: no task codes
   { name: 'Initech Credit Facility', label: 'Initech Loan', client_no: '20411', matter_no: '0002', color: '#3f7d52' },
   { name: 'Umbrella v. Hooli', label: 'Umbrella Lit.', client_no: '30877', matter_no: '0015', color: '#9a3b36', code_set: 'litigation' },
   { name: 'Stark Industries Board', label: 'Stark Board', client_no: '41120', matter_no: '0001', color: '#6b4f8a' },
