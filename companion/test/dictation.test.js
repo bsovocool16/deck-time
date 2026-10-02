@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
-import { cleanTranscript, Dictation, dictationPrompt, dropPromptEcho, NO_SOUND } from '../src/dictation.js';
+import { cleanTranscript, Dictation, dictationPrompt, dropPromptEcho, NO_SOUND, whisperReason } from '../src/dictation.js';
 
 function fakeProc({ stdout = '', stderr = '', code = 0 } = {}) {
   const p = new EventEmitter();
@@ -132,4 +132,34 @@ test('a real short dictation that matches a vocabulary word is kept', () => {
   const { echoes } = dictationPrompt({ name: 'Acme' });
   assert.equal(dropPromptEcho('Disclosure schedules.', echoes), 'Disclosure schedules.');
   assert.equal(dropPromptEcho('Acme.', echoes), '');
+});
+
+test('if whisper rejects its arguments, retry once without the prompt and report its own reason', async () => {
+  const model = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'dt-')), 'model.bin');
+  fs.writeFileSync(model, '');
+  const calls = [];
+  const usage = 'error: unknown argument: --frobnicate\n\nusage: whisper-cli [options] file0 file1 ...\n  -h, --help [default] show this help message and exit\n';
+  const spawnImpl = (cmd, args) => {
+    calls.push({ cmd, args });
+    if (cmd === 'rec') return fakeProc({ stdout: null });
+    if (cmd === 'sox' && args.includes('stat')) return fakeProc({ stdout: '', stderr: 'Maximum amplitude: 0.5\n' });
+    if (cmd === 'sox') return fakeProc({ stdout: '' });
+    return args.includes('--prompt') ? fakeProc({ stdout: '', stderr: usage, code: 1 }) : fakeProc({ stdout: ' Reviewed the seller disclosure schedules.\n' });
+  };
+  const notes = [];
+  const d = new Dictation({ getConfig: () => ({ dictation: { recorder: 'rec', sox: 'sox', whisper: 'whisper-cli', model } }), onText: (t) => notes.push(t), spawnImpl });
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    d.start({ matterId: 1, prompt: 'Legal billing notes for Acme. Terms: seller.', echoes: ['Acme'] });
+    assert.equal(await d.stop(), 'Reviewed the seller disclosure schedules.');
+  } finally {
+    console.error = quiet;
+  }
+  const whisperCalls = calls.filter((c) => c.cmd === 'whisper-cli');
+  assert.equal(whisperCalls.length, 2);
+  assert.equal(whisperCalls[1].args.includes('--prompt'), false);
+  assert.deepEqual(notes, ['Reviewed the seller disclosure schedules.']);
+  assert.equal(whisperReason(usage, 1), 'error: unknown argument: --frobnicate');
+  assert.equal(whisperReason('', 3), 'exit code 3');
 });

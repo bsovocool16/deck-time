@@ -149,10 +149,23 @@ export class Dictation extends EventEmitter {
     });
   }
 
-  transcribe(file) {
+  async transcribe(file) {
+    const prompt = this.context?.prompt;
+    try {
+      return await this.#whisper(file, prompt);
+    } catch (e) {
+      // The vocabulary hint is the only part of the command that varies; if
+      // whisper rejected its arguments, retry once without it.
+      if (!prompt || !e.whisperUsage) throw e;
+      console.error(`[deck-time] whisper rejected the prompt; retrying without it. ${e.message}`);
+      return this.#whisper(file, null);
+    }
+  }
+
+  #whisper(file, prompt) {
     const cfg = this.getConfig().dictation;
     const args = ['-m', cfg.model, '-f', file, '-l', 'en', '-nt', '-np'];
-    if (this.context?.prompt) args.push('--prompt', this.context.prompt);
+    if (prompt) args.push('--prompt', prompt);
     return new Promise((resolve, reject) => {
       const p = this.spawn(cfg.whisper, args);
       let out = '';
@@ -162,7 +175,12 @@ export class Dictation extends EventEmitter {
       p.on('error', (e) =>
         reject(new Error(e.code === 'ENOENT' ? `"${cfg.whisper}" not found. Install: brew install whisper-cpp` : e.message)),
       );
-      p.on('exit', (code) => (code === 0 ? resolve(cleanTranscript(out)) : reject(new Error(`whisper failed: ${err.slice(-300)}`))));
+      p.on('exit', (code) => {
+        if (code === 0) return resolve(cleanTranscript(out));
+        // Full details go to the console (the Terminal running deck-time); the message keeps whisper's own reason.
+        console.error(`[deck-time] whisper exited with code ${code}\nargs: ${JSON.stringify(args)}\n${err}`);
+        reject(Object.assign(new Error(`Transcription failed: ${whisperReason(err, code)}`), { whisperUsage: /usage:/i.test(err) }));
+      });
     });
   }
 }
@@ -218,4 +236,10 @@ export function dictationPrompt(matter, { matters = [], vocabulary } = {}) {
     prompt = `${head} Terms: ${terms.join(', ')}.`;
   }
   return { prompt, echoes: [head, matter.name] };
+}
+
+/** The useful line from whisper's error output (it often appends its whole help text). */
+export function whisperReason(stderr, code) {
+  const lines = String(stderr ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  return lines.find((l) => /^error\b|error:/i.test(l)) ?? lines.find((l) => !/^usage:|^\s*-/i.test(l)) ?? `exit code ${code}`;
 }
