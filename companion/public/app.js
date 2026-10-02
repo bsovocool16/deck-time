@@ -344,11 +344,17 @@ async function setWorkspace(workspace) {
 }
 $('#demo-toggle').addEventListener('change', guard((ev) => setWorkspace(ev.target.checked ? 'demo' : 'real')));
 $('#leave-demo').addEventListener('click', guard(() => setWorkspace('real')));
-$('#reset-demo').addEventListener('click', guard(async () => {
+async function resetDemo() {
   await api('/api/workspace/reset-demo', { method: 'POST', body: {} });
-  toast('Demo day reset');
-  refreshDay(true);
-}));
+  // Start the retake from a clean screen: no open proposals, back on Today.
+  for (const k of Object.keys(proposals)) delete proposals[k];
+  showTab('today');
+  setDay(todayStr());
+  window.scrollTo({ top: 0 });
+  toast('Demo reset to the start');
+}
+$('#reset-demo').addEventListener('click', guard(resetDemo));
+$('#banner-reset-demo').addEventListener('click', guard(resetDemo));
 api('/api/workspace')
   .then((w) => ($('#workspace-settings').hidden = !w.available))
   .catch(() => {});

@@ -106,3 +106,16 @@ test('demo day exports use a fictional timekeeper', async () => {
   assert.doesNotMatch(out.body, /77777/);
   await api('/api/workspace', { method: 'POST', body: { workspace: 'real' } });
 });
+
+test('demo seed puts a sample morning on today even just after midnight', async () => {
+  const { Store } = await import('../src/store.js');
+  const { seedDemo } = await import('../src/demo-seed.js');
+  const { DEFAULTS } = await import('../src/config.js');
+  const oneAm = new Date(2026, 9, 2, 1, 5).getTime();
+  const store = new Store(':memory:', () => DEFAULTS, () => oneAm);
+  seedDemo(store, oneAm);
+  const day = store.day('2026-10-02');
+  assert.ok(day.entries.length >= 4, `entries on today: ${day.entries.length}`);
+  assert.ok(store.segmentsForDay('2026-10-01').every((s) => s.start_ms >= new Date(2026, 9, 2).getTime()));
+  store.close();
+});

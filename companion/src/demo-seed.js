@@ -24,8 +24,11 @@ export function seedDemo(store, now = store.now()) {
     store.updateClient('30877', { name: 'Umbrella Corp', guidelines: 'UTBMS litigation codes required on every entry.' });
   }
 
-  const at = (minAgo) => now - minAgo * MIN;
-  if (localDay(at(240)) !== localDay(now)) return; // too early in the day for a sample morning
+  // The sample morning spans ~4 hours. Early in the day, squeeze it into the time
+  // since midnight so it always lands on today (e.g. a retake at 1 am).
+  const sinceMidnight = (now - new Date(now).setHours(0, 0, 0, 0)) / MIN;
+  const squeeze = sinceMidnight < 245 ? Math.max(0.05, (sinceMidnight - 5) / 240) : 1;
+  const at = (minAgo) => now - minAgo * MIN * squeeze;
   if (store.segmentsForDay(localDay(now)).length) return; // today already has time
 
   const byName = Object.fromEntries(store.listMatters().map((m) => [m.label, m]));
