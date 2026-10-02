@@ -125,3 +125,26 @@ test('importing past Intapp time teaches the code memory', async () => {
   const bad = await api('/api/codes/import', { method: 'POST', body: { files: ['nothing here'] } });
   assert.equal(bad.status, 400);
 });
+
+test('the learning loop: instant draft, your correction at export, better next draft', async () => {
+  const m = await (await api('/api/matters', { method: 'POST', body: { name: 'Loop', client_no: '777777', matter_no: '00001' } })).json();
+  const { today } = await (await api('/api/state')).json();
+  const midnight = new Date(new Date().setHours(0, 0, 0, 0)).getTime();
+  await api('/api/segments', { method: 'POST', body: { matter_id: m.id, start_ms: midnight + 60_000, end_ms: midnight + 13 * 60_000 } });
+  await api(`/api/entries/${today}/${m.id}`, { method: 'PATCH', body: { notes: 'rev deck for BOD' } });
+
+  let e = await (await api(`/api/entries/${today}/${m.id}/narrate`, { method: 'POST', body: {} })).json();
+  assert.equal(e.narrative, 'Reviewed deck for board of directors.');
+
+  // You fix it, then export: the change is logged as a correction.
+  await api(`/api/entries/${today}/${m.id}`, { method: 'PATCH', body: { narrative: 'Reviewed board presentation for board of directors.' } });
+  await api('/api/export', { method: 'POST', body: { date: today, markExported: false, force: true } });
+  const pb = await (await api('/api/phrasebook')).json();
+  assert.ok(pb.corrections >= 1);
+  assert.ok(pb.learned.some((r) => r.to === 'board presentation'));
+
+  // Next draft on this matter already uses your phrasing.
+  await api(`/api/entries/${today}/${m.id}`, { method: 'PATCH', body: { notes: 'rev deck' } });
+  e = await (await api(`/api/entries/${today}/${m.id}/narrate`, { method: 'POST', body: {} })).json();
+  assert.equal(e.narrative, 'Reviewed board presentation.');
+});

@@ -35,7 +35,7 @@ test('office edition serves the review page', async () => {
   assert.match(await res.text(), /deck-time/);
 });
 
-test('AI routes are refused; exact task splits still work without AI', async () => {
+test('office edition drafts instantly without AI; exact task splits too', async () => {
   const m = await json('/api/matters', { method: 'POST', body: { name: 'Alpha', client_no: '1', matter_no: '1' } });
   await api('/api/timer/toggle', { method: 'POST', body: { matter_id: m.id } });
   await api('/api/timer/note', { method: 'POST', body: { text: 'analysis' } });
@@ -44,12 +44,12 @@ test('AI routes are refused; exact task splits still work without AI', async () 
   const { today } = await json('/api/state');
 
   const narrate = await api(`/api/entries/${today}/${m.id}/narrate`, { method: 'POST', body: {} });
-  assert.equal(narrate.status, 403);
-  assert.match((await narrate.json()).error, /turned off/);
+  assert.equal(narrate.status, 200);
+  assert.equal((await narrate.json()).narrative, 'Analysis; emailed.');
 
   const split = await json(`/api/entries/${today}/${m.id}/split/propose`, { method: 'POST', body: {} });
   assert.equal(split.mode, 'tasks');
-  assert.deepEqual(split.entries.map((e) => [e.notes, e.narrative]), [['analysis', ''], ['email', '']]);
+  assert.deepEqual(split.entries.map((e) => [e.notes, e.narrative]), [['analysis', 'Analysis.'], ['email', 'Emailed.']]);
 });
 
 test('default keys without dictation: six matters, Next task, Stop', async () => {

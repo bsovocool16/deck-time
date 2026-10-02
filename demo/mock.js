@@ -371,45 +371,9 @@
     };
   }
 
-  // ---------- simulated AI ----------
-  // The real app runs a local model through Ollama. Here, a few rules turn
-  // shorthand and dictation into narratives so the flow can be tried anywhere.
-
-  const ABBREV = [
-    [/\bw\//gi, 'with '], [/\bre\b/gi, 'regarding'], [/\bopp\b/gi, 'opposing'], [/\bagmt\b/gi, 'agreement'],
-    [/\bGC\b/g, 'general counsel'], [/\bCFO\b/g, 'chief financial officer'], [/\bmtg\b/gi, 'meeting'], [/\bltr\b/gi, 'letter'],
-    [/\bMAC\b/g, 'material adverse change'], [/\bdocs\b/gi, 'documents'], [/\babout\b/gi, 'regarding'], [/\s+/g, ' '],
-  ];
-  const LEAD = [
-    [/^(call|phone call|tc|telephone conference|called)\b( with)?/i, 'Telephone conference with'],
-    [/^(conference call|conf call)\b( with)?/i, 'Conference call with'],
-    [/^(e-?mail|emailed|wrote email|writing an email|drafting an email|drafted an email)\b( to)?/i, 'Drafted email to'],
-    [/^(drafting|drafted|draft|wrote|writing)\b/i, 'Drafted'],
-    [/^(reviewing|reviewed|review|rev)\b/i, 'Reviewed'],
-    [/^(analyzing|analyzed|analysis of)\b/i, 'Analyzed'],
-    [/^(marking up|marked up|mark up)\b/i, 'Revised'],
-    [/^(preparing|prepared|prep)\b/i, 'Prepared'],
-    [/^(researching|researched|research)\b/i, 'Researched'],
-    [/^(meeting|met)\b( with)?/i, 'Meeting with'],
-  ];
-
-  function polish(clause) {
-    let c = clause.trim().replace(/[.;,\s]+$/, '');
-    for (const [re, to] of ABBREV) c = c.replace(re, to);
-    c = c.trim();
-    for (const [re, to] of LEAD) {
-      if (re.test(c)) {
-        c = c.replace(re, to).replace(/\bto to\b/, 'to').replace(/\bwith with\b/, 'with');
-        return c;
-      }
-    }
-    return c.charAt(0).toUpperCase() + c.slice(1);
-  }
-
-  const narrate = (notes) => {
-    const clauses = notes.split(/;|\. /).map((s) => s.trim()).filter(Boolean);
-    return clauses.length ? `${clauses.map(polish).join('; ')}.`.replace(/\.\.$/, '.') : '';
-  };
+  // ---------- drafting ----------
+  // The same instant drafter the app uses (inlined as D by the demo build), so
+  // what you see here is what deck-time does. Codes use simple keyword rules.
 
   function pickCodes(text, codes) {
     const t = text.toLowerCase();
@@ -432,19 +396,17 @@
 
   const codesFor = (matter) => (matter?.code_set && config.codes.taskSets[matter.code_set] ? { tasks: config.codes.taskSets[matter.code_set].codes, activities: config.codes.activities } : null);
 
-  async function draft(date, matterId, part) {
-    await sleep(700 + Math.random() * 500);
+  function draft(date, matterId, part) {
     const e = getEntry(date, matterId, part);
     if (!e.notes.trim()) throw err(400, 'Add a few words of notes first');
-    const narrative = narrate(e.notes);
+    const narrative = D.draftNarrative(e.notes);
     const saved = updateEntry(date, matterId, { narrative }, part);
     emit('drafted');
     const codes = codesFor(getMatter(matterId));
     return codes && !(saved.task_code && saved.activity_code) ? updateEntry(date, matterId, pickCodes(narrative, codes), part) : saved;
   }
 
-  async function proposeSplit(date, matterId) {
-    await sleep(1100 + Math.random() * 600);
+  function proposeSplit(date, matterId) {
     const matter = getMatter(matterId);
     const rows = day(date).entries.filter((e) => e.matter_id === +matterId);
     const totalHours = rows.find((e) => e.part === 0)?.computed_hours || rows.reduce((s, e) => s + e.hours, 0);
@@ -460,7 +422,7 @@
         total_hours: total,
         entries: sized.map((b) => {
           const notes = b.notes.map((n) => n.text).join('; ');
-          return withCodes({ notes, narrative: notes ? narrate(notes) : '', hours: b.hours, task: b.task, range: [b.start, b.end] });
+          return withCodes({ notes, narrative: notes ? D.draftNarrative(notes) : '', hours: b.hours, task: b.task, range: [b.start, b.end] });
         }),
       };
     }
@@ -468,7 +430,7 @@
     if (clauses.length < 2) throw err(400, 'Only one task in the notes. Add notes for each task, or use Next task while you work.');
     const weight = (c) => (/call|conference|meeting/i.test(c) ? 1 : /email|letter/i.test(c) ? 1.5 : 3);
     const sized = A.normalizeSplit(clauses.map((c) => ({ notes: c, hours: weight(c) })), totalHours, config.rounding.increment);
-    return { mode: 'ai', total_hours: totalHours, entries: sized.map((e) => withCodes({ ...e, narrative: narrate(e.notes) })) };
+    return { mode: 'estimate', total_hours: totalHours, entries: sized.map((e) => withCodes({ ...e, narrative: D.draftNarrative(e.notes) })) };
   }
 
   // ---------- simulated dictation ----------
@@ -534,7 +496,9 @@
       const merge = (t, s) => { for (const [k, v] of Object.entries(s)) t[k] = v && typeof v === 'object' && !Array.isArray(v) && k !== 'defaults' ? merge(t[k] ?? {}, v) : v; return t; };
       return merge(config, b);
     }],
-    ['GET', '/api/ai/status', () => ({ reachable: true, installed: true, model: 'Simulated in this demo', models: [] })],
+    ['GET', '/api/ai/status', () => ({ reachable: false, installed: false, model: 'not used', models: [] })],
+    ['GET', '/api/phrasebook', () => ({ corrections: 0, learned: [], active: 0 })],
+    ['GET', '/api/codes/memory', () => ({ examples: 0, bySource: {}, codeSets: [] })],
     ['POST', '/api/tim/learn', () => { throw err(400, 'Learning from an Intapp export works in the installed app.'); }],
     ['GET', '/api/matters', (_, q) => listMatters(q.get('all') === '1')],
     ['POST', '/api/matters', (b) => createMatter(b)],
@@ -563,7 +527,6 @@
     ['POST', new RegExp(`^\\/api\\/entries\\/${E}\\/parts$`), (b, _, [d, m]) => addPart(d, +m, b)],
     ['POST', new RegExp(`^\\/api\\/entries\\/${E}(?:\\/(\\d+))?\\/narrate$`), (_, __, [d, m, p]) => draft(d, +m, +(p ?? 0))],
     ['POST', new RegExp(`^\\/api\\/entries\\/${E}(?:\\/(\\d+))?\\/codes$`), async (_, __, [d, m, p]) => {
-      await sleep(500);
       const codes = codesFor(getMatter(m));
       if (!codes) throw err(400, 'This matter does not use task/activity codes');
       const e = getEntry(d, +m, +(p ?? 0));
@@ -663,7 +626,11 @@
 
     // Earlier today, placed relative to now so it always lands in the past.
     const now = Date.now();
-    const at = (minAgo) => now - minAgo * MIN;
+    // The sample morning spans ~4 hours. Early in the day, squeeze it into the
+    // time since midnight so it always lands on today.
+    const sinceMidnight = (now - new Date(now).setHours(0, 0, 0, 0)) / MIN;
+    const squeeze = sinceMidnight < 245 ? Math.max(0.05, (sinceMidnight - 5) / 240) : 1;
+    const at = (minAgo) => now - minAgo * MIN * squeeze;
     const seg = (m, from, to, task = 0) => db.segments.push({ id: seq++, matter_id: m.id, start_ms: at(from), end_ms: at(to), task });
     const note = (m, minAgo, text) => addNote(text, m.id, 'dictated', at(minAgo));
     const date = T.localDate(at(230));

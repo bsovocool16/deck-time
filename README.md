@@ -19,8 +19,9 @@ one-click export to **Intapp Time** (`.TIM`).
   elapsed clock, idle keys show today's hours, and the Neo info bar shows what's running.
 - **Dictate** (tap to start, tap again to stop) into the running matter's notes. It is
   transcribed locally with Whisper.
-- **Review** opens the day: edit notes, hit ✨ to turn shorthand into a polished
-  narrative (local model via Ollama), adjust hours, then **Export .tim**.
+- **Review** opens the day: **Draft narrative** turns shorthand or dictation into
+  a narrative instantly (rules plus your phrasebook; no AI model), adjust hours,
+  then **Export .TIM**.
 - Time is summed per matter per day, then rounded (default: up to the next 0.1h).
   Midnight-spanning timers split across days.
 
@@ -131,6 +132,29 @@ Default layout: 5 matter keys + Dictate + Next Task + Stop, with the info
 bar showing the running timer. Put Review and more matters on page 2
 (the Neo's touch page buttons), or open Review from the browser.
 
+## Instant drafting and the phrasebook
+
+Drafting doesn't call an AI model. Most of it is mechanical, so rules do it in
+about a millisecond, and they never add facts that aren't in your notes:
+
+- **Shorthand** expands from a built-in legal list (`officer cert` →
+  officer's certificate, `rogs` → interrogatories, `tc w/ opp counsel` →
+  telephone conference with opposing counsel, …) plus your own entries in
+  Settings → *Phrasebook* (`pike = Project Pike`).
+- **Verbs** go into the past tense, and actions are split and joined:
+  `prepare officer cert send to client` → *Prepared officer's certificate and
+  sent to client.*
+- **It learns from your edits.** Each draft is remembered; at export, whatever
+  you changed is logged to `corrections.jsonl` and becomes a substitution. It
+  applies on that matter right away, and everywhere once you've made it twice.
+  Corrections fade with a 45-day half-life, so a deal's vocabulary fades after
+  it closes. Settings lists what's been learned and where it applies.
+- The same learned phrasing feeds Whisper's vocabulary hint, so dictation
+  hears your terms better too.
+
+The design principle: no model in the click path. A model can later act as an
+offline teacher that reviews accumulated corrections and proposes rules.
+
 ## Client billing rules & block billing
 
 **Matters → Client billing rules** remembers instructions per client number:
@@ -142,10 +166,10 @@ the local model whenever it drafts for that client.
 
 On days when you've done several tasks for a no-block client:
 
-- **✂ Split into tasks** has the local model propose one entry per task, with
-  narrative, hours and codes, using your notes and the **timestamps** of your
-  quick notes and dictation to apportion the time. Edit the proposal, then
-  apply it.
+- **Split into tasks** proposes one entry per task, instantly: exact durations
+  from your **Next task** marks, or, without marks, one entry per clause of
+  your notes with time estimated by kind of work. Edit the proposal, then apply
+  it.
 - **+ Split entry** splits one off by hand.
 - The timer total is the anchor: split-off entries have their own hours and
   the main entry keeps the remainder, so the day always reconciles.

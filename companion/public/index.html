@@ -192,10 +192,12 @@
         <label>Mode <select name="rounding.mode"><option value="up">Round up</option><option value="nearest">Nearest</option></select></label>
         <label>Minimum (hours) <input name="rounding.minimum" type="number" step="0.05" min="0"></label>
 
-        <h3 class="ai-only">Local AI <span id="ai-status" class="status"></span></h3>
-        <label class="ai-only">Ollama URL <input name="ai.baseUrl"></label>
-        <label class="ai-only">Model <input name="ai.model" list="ai-models"><datalist id="ai-models"></datalist></label>
-        <label class="wide ai-only">House style guide <textarea name="ai.styleGuide" rows="6"></textarea></label>
+        <h3>Phrasebook <span id="phrasebook-status" class="status"></span></h3>
+        <p class="wide settings-note">Drafts are instant and use no AI model: shorthand is expanded, verbs go into the past tense, and actions are joined. Teach it your own shorthand below. It also learns from you automatically: when you export, every change you made to a draft is remembered for that matter right away, and everywhere once you've made it twice. Recent corrections count more than old ones.</p>
+        <label class="wide">Your shorthand (one per line)
+          <textarea name="phrasebook" rows="5" spellcheck="false" class="mono" placeholder="officer cert = officer's certificate&#10;pike = Project Pike&#10;wg = working group"></textarea>
+        </label>
+        <div class="wide" id="phrasebook-learned"></div>
 
         <h3>Task &amp; activity codes <span id="code-memory-status" class="status"></span></h3>
         <p class="wide settings-note">Codes are suggested instantly from keyword rules and from how you've coded before: every export teaches deck-time, and you can give it a head start with past time exported from Intapp. Nothing here uses AI.</p>

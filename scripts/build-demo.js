@@ -44,6 +44,7 @@ const exporter = asModule(
   'const randomUUID = () => crypto.randomUUID();\n' + read('companion/src/export.js'),
   ['exportable', 'toTim', 'toCsv', 'validateForTim', 'parseTim'],
 );
+const drafter = asModule('D', read('companion/src/drafter.js'), ['draftNarrative', 'draftClauses']);
 const aiSrc = read('companion/src/ai.js');
 const split = `const A = (() => {\n${extract(aiSrc, '/**\n * Allocate a total across entries')}\nreturn { normalizeSplit };\n})();\n`;
 const storeSrc = read('companion/src/store.js');
@@ -74,7 +75,7 @@ const intro = `
       <div>
         <h1>Timekeeping from a Stream Deck, with your own words turned into billing narratives</h1>
         <p>Tap a matter to start its timer, say what you’re doing, and tap Next task when you switch. At the end of the day the notes become narratives, splits and task codes, exported as a file Intapp Time imports.</p>
-        <p class="fine">Everything in the installed app runs on the attorney’s Mac: the timers, speech-to-text and the AI model. In this demo, dictation and AI are simulated, the matters are fictional, and changes stay in this browser tab.</p>
+        <p class="fine">Everything in the installed app runs on the attorney’s own computer: the timers, speech-to-text and drafting. Narratives are drafted instantly by the same rules the app uses, with no AI model. In this demo, dictation is simulated, the matters are fictional, and changes stay in this browser tab.</p>
       </div>
       <div class="intro-actions"><button type="button" id="demo-reset">Reset demo</button></div>
     </div>
@@ -118,7 +119,7 @@ ${body}
 <script>
 ${render}
 (() => {
-${time}${codes}${exporter}${split}${block}
+${time}${codes}${exporter}${split}${block}${drafter}
 ${read('demo/mock.js')}
 })();
 </script>

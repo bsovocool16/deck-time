@@ -189,6 +189,20 @@ async function placeOnKey(slot, item) {
 
 $('#deck-search').addEventListener('input', () => renderSidebar(true));
 
+// ---------- phrasebook ----------
+
+function showPhrasebook(p) {
+  $('#phrasebook-status').textContent = p.corrections
+    ? `learned from ${p.corrections} correction${p.corrections === 1 ? '' : 's'}, ${p.active} in use`
+    : 'learns from your edits each time you export';
+  const rows = p.learned.filter((r) => r.everywhere || r.matters.length);
+  $('#phrasebook-learned').innerHTML = rows.length
+    ? `<table class="learned"><thead><tr><th>Draft said</th><th>You write</th><th>Applies</th></tr></thead><tbody>${rows
+        .map((r) => `<tr><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td>${r.everywhere ? 'Everywhere' : esc(r.matters.join(', '))}</td></tr>`)
+        .join('')}</tbody></table>`
+    : '';
+}
+
 // ---------- code memory ----------
 
 function showCodeMemory(m) {
@@ -480,7 +494,7 @@ function proposalPanel(matterId, matter) {
   const off = Math.abs(sum - p.total_hours) > 0.001;
   return `<div class="split-panel" data-proposal="${matterId}">
     <div class="split-head"><strong>Proposed split</strong> <span class="${off ? 'bad' : ''}">${sum.toFixed(1)} of ${p.total_hours.toFixed(1)}h</span>
-      <small>${p.mode === 'tasks' ? 'From your task breaks, so durations are exact.' : 'Estimated by the local AI from your notes.'} Review and edit before applying. The first row becomes the main entry.</small></div>
+      <small>${p.mode === 'tasks' ? 'From your task breaks, so durations are exact.' : 'One entry per task in your notes, with time estimated by kind of work; adjust the hours.'} Review and edit before applying. The first row becomes the main entry.</small></div>
     ${p.entries
       .map(
         (e, i) => `<div class="split-row" data-i="${i}">
@@ -611,11 +625,8 @@ async function renderSettings() {
   pill.className = 'status ' + (config.timekeeper.id ? 'ok' : 'warn');
   pill.textContent = config.timekeeper.id ? `Timekeeper ${config.timekeeper.id}` : 'Set a timekeeper ID or learn it from an export';
   api('/api/codes/memory').then(showCodeMemory).catch(() => {});
-  const ai = await api('/api/ai/status');
-  const aiPill = $('#ai-status');
-  aiPill.className = 'status ' + (ai.reachable && ai.installed ? 'ok' : 'bad');
-  aiPill.textContent = !ai.reachable ? 'Ollama not running' : ai.installed ? `${ai.model} ready` : `run: ollama pull ${ai.model}`;
-  $('#ai-models').innerHTML = ai.models.map((m) => `<option value="${esc(m)}">`).join('');
+  api('/api/phrasebook').then(showPhrasebook).catch(() => {});
+
 }
 
 function parseKeyValues(text) {

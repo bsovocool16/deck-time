@@ -226,10 +226,11 @@ export const DEFAULT_VOCABULARY = [
  * vocabulary so domain words come out right. Kept short (Whisper reads only
  * the last ~220 tokens of a prompt).
  */
-export function dictationPrompt(matter, { matters = [], vocabulary } = {}) {
+export function dictationPrompt(matter, { matters = [], vocabulary, extra = [] } = {}) {
   const head = `Legal billing notes for ${matter.name}.`;
-  const custom = typeof vocabulary === 'string' ? vocabulary.split(/[,\n]/) : vocabulary;
-  const terms = [...new Set([...(custom?.length ? custom : DEFAULT_VOCABULARY), ...matters.map((m) => m.name)].map((s) => String(s).trim()).filter(Boolean))];
+  const custom = (typeof vocabulary === 'string' ? vocabulary.split(/[,\n]/) : vocabulary ?? []).map((s) => String(s).trim()).filter(Boolean);
+  // Matter names and your learned phrasing first (they matter most), then the general legal list.
+  const terms = [...new Set([...matters.map((m) => m.name), ...extra, ...(custom.length ? custom : DEFAULT_VOCABULARY)].map((s) => String(s).trim()).filter(Boolean))];
   let prompt = `${head} Terms: ${terms.join(', ')}.`;
   while (prompt.length > 900 && terms.length) {
     terms.pop();

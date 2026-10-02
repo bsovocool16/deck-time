@@ -205,19 +205,9 @@ test('proposeSplit sends guidelines + timeline and normalizes the answer', async
 test('server: propose → apply → export warns on block-billed narratives', async () => {
   let config = deepMerge(DEFAULTS, { timekeeper: { id: '10001' } });
   const { store, clock } = setup();
-  const fetchImpl = async () => ({
-    ok: true,
-    json: async () => ({
-      message: {
-        content: JSON.stringify({
-          entries: [
-            { notes: 'a', narrative: 'Analyzed issue.', hours: 0.4 },
-            { notes: 'b', narrative: 'Drafted email regarding same.', hours: 0.1 },
-          ],
-        }),
-      },
-    }),
-  });
+  const fetchImpl = async () => {
+    throw new Error('splitting must not call a model');
+  };
   const server = createServer({ store, getConfig: () => config, setConfig: (c) => (config = c), fetchImpl, exportDir: fs.mkdtempSync(path.join(os.tmpdir(), 'dt-')) });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -226,13 +216,15 @@ test('server: propose → apply → export warns on block-billed narratives', as
     const m = store.createMatter({ name: 'Strict', client_no: '222222', matter_no: '00101' });
     await post('/api/clients/222222', { no_block_billing: true, guidelines: 'No block billing.' }, 'PUT');
     timeOn(store, clock, m.id, 30);
-    store.addNote('analysis; email', m.id);
+    store.addNote('analyze indemnity provisions; email deal team re same', m.id);
 
+    // No marked tasks: one entry per clause, analysis weighted over the email.
     const proposal = await (await post(`/api/entries/${DATE}/${m.id}/split/propose`)).json();
+    assert.equal(proposal.mode, 'estimate');
     assert.equal(proposal.total_hours, 0.5);
-    assert.equal(proposal.entries.length, 2);
+    assert.deepEqual(proposal.entries.map((e) => e.narrative), ['Analyzed indemnity provisions.', 'Emailed deal team regarding same.']);
     const applied = await (await post(`/api/entries/${DATE}/${m.id}/split/apply`, { entries: proposal.entries })).json();
-    assert.deepEqual(applied.map((e) => e.hours), [0.4, 0.1]);
+    assert.deepEqual(applied.map((e) => e.hours), [0.3, 0.2]);
 
     // A block-billed narrative on part 1 triggers a warning that needs force.
     await post(`/api/entries/${DATE}/${m.id}/1`, { narrative: 'Drafted email; called client.' }, 'PATCH');
@@ -301,15 +293,13 @@ test('state reports the running task count', () => {
   assert.equal(store.state().running.tasks_today, 2);
 });
 
-test('server: marked tasks give an exact split; model only writes narratives', async () => {
+test('server: marked tasks give an exact split with instant narratives', async () => {
   let config = deepMerge(DEFAULTS, { timekeeper: { id: '10001' } });
   const { store, clock } = setup();
   const calls = [];
   const fetchImpl = async (_u, opts) => {
-    const body = JSON.parse(opts.body);
-    calls.push(body);
-    const notes = body.messages.at(-1).content.match(/Notes: (.*)/)?.[1] ?? '';
-    return { ok: true, json: async () => ({ message: { content: `Narrative for ${notes}.` } }) };
+    calls.push(opts);
+    throw new Error('no model calls expected');
   };
   const server = createServer({ store, getConfig: () => config, setConfig: (c) => (config = c), fetchImpl, exportDir: fs.mkdtempSync(path.join(os.tmpdir(), 'dt-')) });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -318,23 +308,23 @@ test('server: marked tasks give an exact split; model only writes narratives', a
   try {
     const m = store.createMatter({ name: 'Strict', client_no: '1', matter_no: '1', block_billing: 'prohibited' });
     store.toggle(m.id);
-    store.addNote('analysis');
+    store.addNote('analyze MAC clause');
     clock.advance(42 * MIN);
-    assert.equal((await post('/api/timer/next-task', { label: 'email' })).status, 200);
+    assert.equal((await post('/api/timer/next-task', { label: 'email deal team re analysis' })).status, 200);
     clock.advance(9 * MIN);
-    await post('/api/timer/next-task', { label: 'call' });
+    await post('/api/timer/next-task', { label: 'call w/ client GC re same' });
     clock.advance(13 * MIN);
     store.stop();
 
     const p = await (await post(`/api/entries/${DATE}/${m.id}/split/propose`)).json();
     assert.equal(p.mode, 'tasks');
     assert.equal(p.total_hours, 1.1);
-    assert.deepEqual(p.entries.map((e) => [e.notes, e.hours, e.narrative]), [
-      ['analysis', 0.7, 'Narrative for analysis.'],
-      ['email', 0.2, 'Narrative for email.'],
-      ['call', 0.2, 'Narrative for call.'],
+    assert.deepEqual(p.entries.map((e) => [e.hours, e.narrative]), [
+      [0.7, 'Analyzed MAC clause.'],
+      [0.2, 'Emailed deal team regarding analysis.'],
+      [0.2, 'Telephone conference with client general counsel regarding same.'],
     ]);
-    assert.equal(calls.length, 3); // one narrative per task, no split-guessing call
+    assert.equal(calls.length, 0); // no model involved
   } finally {
     server.close();
     store.close();

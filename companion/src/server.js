@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { aiStatus, draftNarrative, normalizeSplit, proposeSplit } from './ai.js';
+import { aiStatus, normalizeSplit } from './ai.js';
+import { draftClauses, draftNarrative } from './drafter.js';
+import { Phrasebook } from './phrasebook.js';
 import { CodeMemory, examplesFromTim } from './coder.js';
 import { codesFor } from './codes.js';
 import { EXPORT_DIR, deepMerge } from './config.js';
@@ -33,6 +35,7 @@ export function createServer({
   publicDir = DEFAULT_PUBLIC_DIR,
   workspace = null, // { get(), set(name), resetDemo() } when real/demo switching is available
   coder = new CodeMemory(), // learned task/activity codes (see coder.js)
+  phrasebook = new Phrasebook(), // learned phrasing for the instant drafter (see phrasebook.js)
 }) {
   const clients = new Set();
   // What the Stream Deck plugin reports is actually on each key (in memory; the
@@ -72,7 +75,6 @@ export function createServer({
     mic_verified: !!dictation && getConfig().dictation?.verified === true,
     workspace: workspace?.get() ?? 'real',
   });
-  const aiOn = () => getConfig().features?.ai !== false;
   const matterKey = (m) => [m.client_no, m.matter_no].filter(Boolean).join('.');
   /** Instant codes for an entry: learned from your history, else keyword rules. No AI. */
   const instantCodes = (matter, text) => {
@@ -87,9 +89,6 @@ export function createServer({
     const picked = instantCodes(matter, e.narrative || e.notes);
     if (!picked) return e;
     return store.updateEntry(date, matterId, { task_code: e.task_code || picked.task_code, activity_code: e.activity_code || picked.activity_code }, part);
-  };
-  const requireAi = () => {
-    if (!aiOn()) throw httpError(403, 'AI drafting is turned off in this edition. Write the narrative directly.');
   };
   // Tick so running timers refresh even with no changes.
   const ticker = setInterval(() => clients.size && broadcast(), 1000);
@@ -108,7 +107,7 @@ export function createServer({
       const running = store.running();
       if (!running) throw httpError(400, 'Start a timer first; dictation goes into its notes');
       const matter = store.getMatter(running.matter_id);
-      const hint = dictationPrompt(matter, { matters: store.listMatters(), vocabulary: getConfig().dictation?.vocabulary });
+      const hint = dictationPrompt(matter, { matters: store.listMatters(), vocabulary: getConfig().dictation?.vocabulary, extra: phrasebook.vocabulary() });
       dictation.start({ matterId: matter.id, ...hint, startedAt: store.now() });
       return { recording: true };
     }],
@@ -132,24 +131,18 @@ export function createServer({
     }],
     ['DELETE', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/(\d+)$/, (_, __, [date, id, part]) => store.deletePart(date, +id, +part)],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/parts$/, (b, _, [date, id]) => store.addPart(date, +id, b)],
-    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/narrate$/, async (_, __, [date, id, part]) => {
-      requireAi();
+    // Instant draft from notes: rules + your phrasebook, no AI model (see drafter.js).
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/narrate$/, (_, __, [date, id, part]) => {
       const matterId = +id;
       const p = +(part ?? 0);
       const matter = store.getMatter(matterId);
       if (!matter) throw httpError(404, 'Matter not found');
-      const entry = store.day(date).entries.find((e) => e.matter_id === matterId && e.part === p) ?? store.getEntry(date, matterId, p);
-      const narrative = await draftNarrative({
-        config: getConfig(),
-        matter,
-        notes: entry.notes,
-        hours: entry.hours,
-        recent: store.recentNarratives(matterId),
-        rules: store.rulesFor(matter),
-        fetchImpl,
-      });
-      store.updateEntry(date, matterId, { narrative }, p);
-      return fillMissingCodes(date, matterId, p); // instant, from your history or keyword rules
+      const { notes } = store.getEntry(date, matterId, p);
+      if (!notes?.trim()) throw httpError(400, 'Add a few words of notes first, typed or dictated');
+      const narrative = draftNarrative(notes, phrasebook.options(matterKey(matter)));
+      // Keep the draft so we can learn from how you change it before export.
+      store.updateEntry(date, matterId, { narrative, draft: narrative }, p);
+      return fillMissingCodes(date, matterId, p);
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)(?:\/(\d+))?\/codes$/, (_, __, [date, id, part]) => {
       const matterId = +id;
@@ -163,6 +156,7 @@ export function createServer({
       return { ...saved, code_source: picked.source };
     }],
     ['GET', /^\/api\/codes\/memory$/, () => coder.stats()],
+    ['GET', /^\/api\/phrasebook$/, () => ({ ...phrasebook.stats(), learned: phrasebook.list(50) })],
     ['POST', /^\/api\/codes\/import$/, (b) => {
       const files = Array.isArray(b.files) ? b.files : [String(b.text ?? '')];
       const examples = files.flatMap((text) => examplesFromTim(parseTim(String(text)), 'import'));
@@ -170,8 +164,8 @@ export function createServer({
       const added = coder.add(examples);
       return { found: examples.length, added, ...coder.stats() };
     }],
-    // Block billing: propose a split with the local model (not saved), then apply the reviewed version.
-    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/propose$/, async (_, __, [date, id]) => {
+    // Block billing: propose a split (not saved), then apply the reviewed version. Instant; no AI model.
+    ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/propose$/, (_, __, [date, id]) => {
       const matterId = +id;
       const matter = store.getMatter(matterId);
       if (!matter) throw httpError(404, 'Matter not found');
@@ -180,42 +174,29 @@ export function createServer({
       const totalHours = main?.computed_hours || rows.reduce((s, e) => s + e.hours, 0);
       if (!(totalHours > 0)) throw httpError(400, 'No time recorded for this matter today');
       const config = getConfig();
-      const rules = store.rulesFor(matter);
-      const codes = codesFor(matter, config);
+      const inc = config.rounding.increment;
+      const draftOpts = phrasebook.options(matterKey(matter));
+      const withCodes = (item) => (item.narrative ? { ...item, ...(instantCodes(matter, item.narrative) ?? {}) } : item);
       const blocks = store.taskBlocks(date, matterId);
 
       if (blocks.length > 1) {
-        // Tasks were marked with "Next task": durations are exact, the model only writes narratives/codes.
-        // Every marked task is its own entry, so each gets at least the minimum increment.
-        const inc = config.rounding.increment;
+        // Tasks were marked with "Next task": durations are exact. Each marked task gets at least the minimum.
         const total = Math.max(totalHours, Math.round(blocks.length * Math.max(inc, config.rounding.minimum) * 100) / 100);
         const sized = normalizeSplit(blocks.map((b) => ({ ...b, hours: b.ms / 3_600_000 })), total, inc);
-        const entries = [];
-        for (const b of sized) {
+        const entries = sized.map((b) => {
           const notes = b.notes.map((n) => n.text).join('; ');
-          const item = { notes, narrative: '', hours: b.hours, task: b.task, range: [b.start, b.end] };
-          if (notes && aiOn()) {
-            item.narrative = await draftNarrative({ config, matter, notes, hours: b.hours, recent: store.recentNarratives(matterId), rules, fetchImpl });
-            if (codes) Object.assign(item, instantCodes(matter, item.narrative));
-          }
-          entries.push(item);
-        }
+          const narrative = notes ? draftNarrative(notes, draftOpts) : '';
+          return withCodes({ notes, narrative, draft: narrative, hours: b.hours, task: b.task, range: [b.start, b.end] });
+        });
         return { mode: 'tasks', total_hours: total, entries };
       }
 
-      if (!aiOn()) throw httpError(400, 'Mark each task with Next task while you work to split exactly, or use Add split.');
-      const proposal = await proposeSplit({
-        config,
-        matter,
-        rules,
-        notes: rows.map((e) => e.notes).filter(Boolean).join('; '),
-        timeline: store.timeline(date, matterId),
-        totalHours,
-        codes,
-        increment: config.rounding.increment,
-        fetchImpl,
-      });
-      return { mode: 'ai', total_hours: totalHours, entries: proposal };
+      // No marked tasks: one entry per clause of your notes, with time weighted by kind of work.
+      const clauses = draftClauses(rows.map((e) => e.notes).filter(Boolean).join('; '), draftOpts);
+      if (clauses.length < 2) throw httpError(400, 'Only one task in the notes. Mark tasks with Next task as you work, or use Add split.');
+      const weight = (c) => (/call|telephone|conference|meeting|\bmtg\b|\btc\b/i.test(c) ? 1 : /email|e-mail|letter|sent|send/i.test(c) ? 1.5 : 3);
+      const sized = normalizeSplit(clauses.map((c) => ({ ...c, hours: weight(c.notes) })), totalHours, inc);
+      return { mode: 'estimate', total_hours: totalHours, entries: sized.map((c) => withCodes({ ...c, draft: c.narrative })) };
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
     ['POST', /^\/api\/dictation\/test$/, async () => {
@@ -296,8 +277,12 @@ export function createServer({
     const savedTo = path.join(exportDir, filename);
     fs.writeFileSync(savedTo, body);
     if (markExported) for (const e of entries) store.updateEntry(date, e.matter_id, { status: 'exported' }, e.part);
-    // Every export teaches the code memory how you code (never from demo data).
+    // Every export teaches the code memory how you code, and the phrasebook how you
+    // phrase things (what you changed from the instant draft). Never from demo data.
     if (workspace?.get() !== 'demo') {
+      for (const e of entries) {
+        if (e.draft && e.narrative.trim() !== e.draft.trim()) phrasebook.addCorrection({ draft: e.draft, final: e.narrative, matter: matterKey(e.matter) });
+      }
       coder.add(
         entries
           .filter((e) => e.task || e.activity)

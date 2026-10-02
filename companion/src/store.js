@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS entries (
   hours_override REAL,
   task_code      TEXT NOT NULL DEFAULT '',   -- blank = use the matter's default
   activity_code  TEXT NOT NULL DEFAULT '',
+  draft          TEXT NOT NULL DEFAULT '',   -- last instant draft, to learn from your edits
   status         TEXT NOT NULL DEFAULT 'draft',  -- draft | ready | exported
   exported_at    INTEGER,
   updated_at     INTEGER NOT NULL,
@@ -76,7 +77,7 @@ CREATE INDEX IF NOT EXISTS note_events_day ON note_events(date, matter_id);
 
 const MATTER_FIELDS = ['client_no', 'matter_no', 'name', 'label', 'color', 'task_code', 'activity_code', 'code_set', 'block_billing', 'guidelines', 'archived'];
 const CLIENT_FIELDS = ['name', 'no_block_billing', 'guidelines'];
-const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'status'];
+const ENTRY_FIELDS = ['notes', 'narrative', 'hours_override', 'task_code', 'activity_code', 'draft', 'status'];
 const STATUSES = new Set(['draft', 'ready', 'exported']);
 const BLOCK_BILLING = new Set(['', 'allowed', 'prohibited']);
 export const DECK_KINDS = new Set(['matter', 'dictate', 'next-task', 'stop', 'review', 'empty']);
@@ -90,6 +91,7 @@ const MIGRATIONS = [
   ['matters', 'guidelines', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'task_code', "TEXT NOT NULL DEFAULT ''"],
   ['entries', 'activity_code', "TEXT NOT NULL DEFAULT ''"],
+  ['entries', 'draft', "TEXT NOT NULL DEFAULT ''"],
 ];
 
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -488,14 +490,14 @@ export class Store extends EventEmitter {
   #write(date, matterId, part, e) {
     this.db
       .prepare(
-        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, status, exported_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO entries (date, matter_id, part, notes, narrative, hours_override, task_code, activity_code, draft, status, exported_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (date, matter_id, part) DO UPDATE SET
            notes = excluded.notes, narrative = excluded.narrative, hours_override = excluded.hours_override,
-           task_code = excluded.task_code, activity_code = excluded.activity_code,
+           task_code = excluded.task_code, activity_code = excluded.activity_code, draft = excluded.draft,
            status = excluded.status, exported_at = excluded.exported_at, updated_at = excluded.updated_at`,
       )
-      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
+      .run(date, matterId, part, e.notes ?? '', e.narrative ?? '', e.hours_override ?? null, e.task_code ?? '', e.activity_code ?? '', e.draft ?? '', e.status ?? 'draft', e.exported_at ?? null, this.now());
   }
 
   /** Split off a new entry for the same matter/day. Its hours come out of the main entry's. */
@@ -542,7 +544,7 @@ export class Store extends EventEmitter {
         status: 'draft',
       });
       rest.forEach((item, i) => {
-        this.#write(date, matterId, i + 1, { ...pick(item, ['notes', 'narrative', 'task_code', 'activity_code']), hours_override: round2(Number(item.hours)), status: 'draft' });
+        this.#write(date, matterId, i + 1, { ...pick(item, ['notes', 'narrative', 'task_code', 'activity_code', 'draft']), hours_override: round2(Number(item.hours)), status: 'draft' });
       });
       this.db.exec('COMMIT');
     } catch (e) {

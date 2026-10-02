@@ -21,6 +21,7 @@ export function pathsFor(home) {
     demoDb: path.join(home, 'demo.db'), // fictional matters for showing people; never mixed with real data
     exports: path.join(home, 'exports'),
     codeMemory: path.join(home, 'code-memory.jsonl'), // narratives + codes you've exported or imported
+    corrections: path.join(home, 'corrections.jsonl'), // instant drafts vs. what you sent, for the phrasebook
   };
 }
 
@@ -53,6 +54,7 @@ export const DEFAULTS = {
     device: '', // blank = system default input (set in System Settings → Sound)
     vocabulary: '', // comma-separated words to help transcription; blank = built-in legal terms
   },
+  phrasebook: '', // your shorthand, one per line: "officer cert = officer's certificate"
   timekeeper: {
     id: '',
     name: '',

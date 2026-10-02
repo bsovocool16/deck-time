@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defaultHome, loadConfig, pathsFor, saveConfig } from './config.js';
 import { CodeMemory } from './coder.js';
+import { Phrasebook } from './phrasebook.js';
 import { seedDemo } from './demo-seed.js';
 import { Dictation } from './dictation.js';
 import { createServer } from './server.js';
@@ -81,7 +82,8 @@ export async function startCompanion({ home = defaultHome(), edition = 'full', p
     : null;
 
   const coder = new CodeMemory(paths.codeMemory);
-  const server = createServer({ store, getConfig, setConfig, dictation, publicDir, exportDir: paths.exports, workspace, coder });
+  const phrasebook = new Phrasebook({ file: paths.corrections, custom: () => config.phrasebook, corpus: () => coder.examples });
+  const server = createServer({ store, getConfig, setConfig, dictation, publicDir, exportDir: paths.exports, workspace, coder, phrasebook });
   const listenPort = port ?? config.port;
   await new Promise((resolve, reject) => {
     server.once('error', reject);

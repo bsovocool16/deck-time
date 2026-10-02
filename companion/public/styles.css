@@ -390,7 +390,9 @@ label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap;
 
 /* ---------- editions & demo day ---------- */
 
-.no-ai [data-action="draft"], .no-ai #draft-all, .no-ai .ai-only { display: none !important; }
+.no-ai .ai-only { display: none !important; }
+table.learned { margin-top: 0; font-size: 12.5px; }
+table.learned td:first-child { color: var(--muted); }
 .settings-note { grid-column: 1 / -1; margin: 0; color: var(--ink-2); max-width: 70ch; }
 .no-dictation #dictate-btn, .no-dictation .deck-fns [data-kind="dictate"], .no-dictation .dictation-only { display: none !important; }
 .demo-banner { background: var(--warn); color: var(--sheet); font-size: 13px; }
