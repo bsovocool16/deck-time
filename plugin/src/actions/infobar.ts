@@ -2,7 +2,7 @@ import { action, SingletonAction, type WillAppearEvent } from "@elgato/streamdec
 import { companion } from "../companion";
 import { clock } from "../render";
 
-/** Stream Deck Neo info bar: running matter + elapsed time, or today's total (or a nudge to answer the overnight check). */
+/** Stream Deck Neo info bar: running matter, its elapsed time and today's total; or today's total (or a nudge to answer the overnight check). */
 @action({ UUID: "com.bsovocool.decktime.infobar" })
 export class Infobar extends SingletonAction {
 	#last = "";
@@ -21,17 +21,13 @@ export class Infobar extends SingletonAction {
 
 	#renderAll(): void {
 		const s = companion.state;
-		let feedback: { title: string; value: string; target?: { value: number; bar_fill_c: string; opacity: 0 | 1 } };
+		let feedback: { title: string; value: string };
 		if (!companion.online || !s) feedback = { title: "deck-time", value: "offline" };
 		else if (s.overnight) feedback = { title: "Overnight timer?", value: "check app" };
-		else if (s.running) feedback = { title: s.running.matter.label || s.running.matter.name, value: clock(s.now - s.running.start_ms) };
+		// The Neo's two touch points beside the info bar are reserved for page switching (plugins
+		// can't use them), so the running timer and the day's total share the bar instead of toggling.
+		else if (s.running) feedback = { title: s.running.matter.label || s.running.matter.name, value: `${clock(s.now - s.running.start_ms)} · ${s.total_hours.toFixed(1)}h` };
 		else feedback = { title: "No timer running", value: `${s.total_hours.toFixed(1)}h today` };
-		if (companion.online && s) {
-			// Progress toward the daily target (Settings → Daily target); hidden when it's 0.
-			const goal = s.daily_target ?? 0;
-			const pct = goal ? Math.min(100, Math.round((s.total_hours / goal) * 100)) : 0;
-			feedback.target = { value: pct, bar_fill_c: pct >= 100 ? "#5FAF73" : "#7AA7D6", opacity: goal ? 1 : 0 };
-		}
 		const key = JSON.stringify(feedback);
 		if (key === this.#last) return;
 		this.#last = key;

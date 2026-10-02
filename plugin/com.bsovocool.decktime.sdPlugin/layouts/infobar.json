@@ -27,7 +27,7 @@
         16,
         24,
         184,
-        22
+        24
       ],
       "alignment": "center",
       "font": {
@@ -35,25 +35,6 @@
         "weight": 700
       },
       "color": "#F2F2EF"
-    },
-    {
-      "key": "target",
-      "type": "bar",
-      "rect": [
-        16,
-        49,
-        184,
-        4
-      ],
-      "subtype": 0,
-      "border_w": 0,
-      "bar_bg_c": "#3A3A37",
-      "bar_fill_c": "#7AA7D6",
-      "value": 0,
-      "range": {
-        "min": 0,
-        "max": 100
-      }
     }
   ]
 }

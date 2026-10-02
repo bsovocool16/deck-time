@@ -157,7 +157,7 @@ offline teacher that reviews accumulated corrections and proposes rules.
 
 ## Daily target
 
-A bar next to today's total fills toward your daily target (8 hours by default, set in **Settings → Timekeeper**). The same bar runs along the bottom of the Neo info bar and turns green when you hit the target. Set it to 0 to hide it.
+A bar next to today's total on the page fills toward your daily target (8 hours by default, set in **Settings → Timekeeper**). It turns green when you hit the target. Set the target to 0 to hide the bar. The Neo info bar shows the running timer next to today's total (`0:42:10 · 5.3h`).
 
 ## Review key
 

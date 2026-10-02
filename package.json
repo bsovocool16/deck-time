@@ -1,6 +1,6 @@
 {
   "name": "deck-time",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "Stream Deck timers + local-AI narratives + Intapp Time .tim export",
   "type": "module",
