@@ -1,13 +1,14 @@
 # deck-time
 
-Physical matter timers on a Stream Deck, local-AI billing narratives, and a
-one-click export to **Intapp Time** (`.TIM`).
+Physical matter timers on a Stream Deck, instant billing narratives and codes
+(rules plus what it learns from your edits, no AI model), local dictation, and
+a one-click export to **Intapp Time** (`.TIM`).
 
 ```
  Stream Deck Neo                       deck-time companion (localhost:7331)
  ┌──────┬──────┬──────┬──────┐         ┌──────────────────────────────────┐
  │Acme  │Init. │Umbr. │Stark │  tap →  │ timers · notes · entries (SQLite) │
- │12:34 │ 1.5h │      │      │ ← state │ Ollama → narratives               │
+ │12:34 │ 1.5h │      │      │ ← state │ rules + phrasebook → narratives   │
  ├──────┼──────┼──────┼──────┤   SSE   │ sox + whisper.cpp → dictation     │
  │Wayne │ 🎙   │ ■    │Review│         │ export → deck-time-YYYY-MM-DD.TIM │
  └──────┴──────┴──────┴──────┘         └──────────────────────────────────┘
@@ -18,14 +19,14 @@ one-click export to **Intapp Time** (`.TIM`).
   one runs at a time); tapping the running one stops it. The live key shows the
   elapsed clock, idle keys show today's hours, and the Neo info bar shows what's running.
 - **Dictate** (tap to start, tap again to stop) into the running matter's notes. It is
-  transcribed locally with Whisper.
-- **Review** opens the day: **Draft narrative** turns shorthand or dictation into
+  transcribed locally with Whisper (full edition).
+- **Review** brings up the day in the deck-time window you have open: **Draft narrative** turns shorthand or dictation into
   a narrative instantly (rules plus your phrasebook; no AI model), adjust hours,
   then **Export .TIM**.
 - Time is summed per matter per day, then rounded (default: up to the next 0.1h).
   Midnight-spanning timers split across days.
 
-**Privacy:** everything runs on this Mac. No cloud AI, audio is deleted after
+**Privacy:** everything runs on this computer. No AI service or model, audio is deleted after
 transcription, and the server only listens on `127.0.0.1` and rejects cross-site
 requests. Matters, time, and config live in `~/.deck-time/`, **never in this repo**.
 
@@ -35,8 +36,12 @@ requests. Matters, time, and config live in `~/.deck-time/`, **never in this rep
 |---|---|---|
 | Runs as | `npm start` (Node 22.13+) | inside the Stream Deck plugin; nothing else to install |
 | Timers, keys, sidebar, notes, splits, client rules, `.TIM` export | yes | yes |
-| AI narratives and code suggestions | yes (local Ollama) | off |
-| Dictation | yes (sox + Whisper) | off |
+| Instant narratives, phrasebook, task/activity codes | yes | yes |
+| Dictation | yes (sox + Whisper, about 0.5 to 1.6 GB model) | off |
+| Extra installs | sox, whisper.cpp and a Whisper model | none |
+
+Neither edition needs an AI model. The only large download is the Whisper
+model for dictation; skip it and everything else works.
 | Data folder | `~/.deck-time` | `%APPDATA%\deck-time` (Windows) |
 
 **Office edition install:** install the Stream Deck app, then double-click
@@ -63,26 +68,13 @@ npm run demo         # same, with fictional matters in ./data/demo
 npm test
 ```
 
-### AI narratives (Ollama)
-
-```bash
-brew install ollama
-scripts/ollama-serve.sh &             # keeps models in ./models/ollama (gitignored)
-ollama pull gemma3:12b                # any chat model works; set it in Settings
-```
-
-Tune the house style guide and examples in **Settings**. Ollama unloads the
-model two minutes after use (`ai.keepAlive`), so it only takes memory while
-drafting. Past narratives you
-mark *ready* or *exported* on the same matter are fed back as style examples.
-
-### Dictation (sox + whisper.cpp)
+### Dictation (optional: sox + whisper.cpp)
 
 ```bash
 brew install sox whisper-cpp
 mkdir -p models/whisper   # inside this repo, gitignored
 curl -L -o models/whisper/ggml-small.en.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin   # about 470 MB
 ```
 
 For better accuracy, use `ggml-large-v3-turbo.bin` (about 1.6 GB, same source)
@@ -94,7 +86,9 @@ are always included.
 Dictation records from the **macOS default input** (System Settings → Sound →
 Input). Pick your mic there, e.g. a DJI Mic Mini receiver. The first recording
 triggers a macOS microphone permission prompt for whatever app launched the
-server (Terminal, etc.). To pin a specific device instead, set
+server (Terminal, etc.). macOS doesn't give the microphone to the Stream Deck
+plugin's own runtime, so for dictation run `npm start` in Terminal.app and set
+`"embedded": false` (see Editions). To pin a specific device instead, set
 `dictation.device` in `~/.deck-time/config.json` to the device name.
 
 ### Stream Deck plugin
@@ -122,11 +116,11 @@ Or set keys up individually from the **deck-time** category:
 |---|---|
 | deck-time Key | Shows whatever the app's layout assigns to that position (matter or function). |
 | Matter Timer | Pick a matter in the key's settings. Tap = start/stop. |
-| Dictate Note | Hold to talk / tap to toggle. Adds to the running matter's notes. |
+| Dictate Note | Tap to start, tap again to stop. Adds to the running matter's notes. |
 | Next Task | Marks a task boundary on the running timer (shows task # and time in task). |
 | Stop Timer | Stops whatever is running. Shows today's total. |
-| Review Day | Opens the companion in your browser. |
-| Timer Info Bar | Drag onto the Neo's info bar. Running matter + clock. |
+| Review Day | Brings up today in the deck-time window you have open (see Review key). |
+| Timer Info Bar | Drag onto the Neo's info bar. Running matter, clock and today's total. |
 
 Default layout: 5 matter keys + Dictate + Next Task + Stop, with the info
 bar showing the running timer. Put Review and more matters on page 2
@@ -179,8 +173,8 @@ The one question it asks: if a timer from last night is still running at the che
 a *No block billing* switch and free-text guidelines (e.g. "separate legal
 analysis, the internal email about it, and any call into distinct entries").
 Every matter under that client inherits them. A matter can override
-(*prohibited* / *allowed*) and add its own guidelines. The rules are fed to
-the local model whenever it drafts for that client.
+(*prohibited* / *allowed*) and add its own guidelines, shown as a badge on
+each of that client's entries.
 
 On days when you've done several tasks for a no-block client:
 
@@ -199,9 +193,9 @@ when you move from, say, the analysis to the email about it. The timer keeps
 running on the same matter, but a new task starts. Tap Dictate right after to
 label it. When you split, each marked task becomes its own entry with its real
 duration (tenths allocated by largest remainder so they add up, each at least
-the minimum), and the model only writes the narratives and codes. Without
-marks, the model estimates the split from your timestamped notes. Switching to
-another matter and back continues the same task.
+the minimum), drafted from the notes taken during it. Without marks, the split
+follows the clauses of your notes. Switching to another matter and back within
+15 minutes continues the same task.
 
 ## Task / activity codes
 
@@ -264,8 +258,9 @@ non-billable matter first.
 ```
 companion/src/     main.js (CLI entry), host.js (startup, editions, demo day),
                    server.js (HTTP + SSE), store.js (SQLite), export.js (.TIM/CSV),
-                   ai.js (Ollama), dictation.js (sox + whisper), demo-seed.js,
-                   codes.js, time.js, config.js
+                   drafter.js + phrasebook.js (instant narratives, learned edits),
+                   coder.js + codes.js (task/activity codes), dictation.js (sox +
+                   whisper), window.js (Review key), demo-seed.js, time.js, config.js
 companion/public/  review UI (vanilla JS), includes a clickable virtual deck
 plugin/            Stream Deck plugin (TypeScript, @elgato/streamdeck v3); hosts the
                    office edition. `node plugin/scripts/simulate.mjs` exercises the
