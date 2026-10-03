@@ -215,11 +215,14 @@ function showPhrasebook(p) {
   $('#phrasebook-status').textContent = p.corrections
     ? `learned from ${p.corrections} correction${p.corrections === 1 ? '' : 's'}, ${p.active} in use`
     : 'learns from your edits each time you export';
-  const rows = p.learned.filter((r) => r.everywhere || r.matters.length);
-  $('#phrasebook-learned').innerHTML = rows.length
-    ? `<table class="learned"><thead><tr><th>Draft said</th><th>You write</th><th>Applies</th></tr></thead><tbody>${rows
-        .map((r) => `<tr><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td>${r.everywhere ? 'Everywhere' : esc(r.matters.join(', '))}</td></tr>`)
-        .join('')}</tbody></table>`
+  const active = p.learned.filter((r) => r.everywhere || r.matters.length);
+  const undone = p.learned.filter((r) => r.undone && !r.everywhere && !r.matters.length);
+  const row = (r, applies) => `<tr class="${applies ? '' : 'off'}"><td>${esc(r.from)}</td><td>${esc(r.to)}</td><td>${applies || `Off: you undid it${r.undone > 1 ? ` ${r.undone} times` : ''}`}</td></tr>`;
+  $('#phrasebook-learned').innerHTML = active.length || undone.length
+    ? `<table class="learned"><thead><tr><th>Draft said</th><th>You write</th><th>Applies</th></tr></thead><tbody>${[
+        ...active.map((r) => row(r, r.everywhere ? 'Everywhere' : esc(r.matters.map(matterByKey).join(', ')))),
+        ...undone.map((r) => row(r, '')),
+      ].join('')}</tbody></table>`
     : '';
 }
 
@@ -260,8 +263,11 @@ function showTeacher(t) {
         .join('')}`
     : '';
   $('#teacher-rules').innerHTML = t.rules.length
-    ? `<h4>Rules in use</h4><table class="learned"><thead><tr><th>Kind</th><th>Rule</th><th>Applies</th><th></th></tr></thead><tbody>${t.rules
-        .map((r) => `<tr data-rule-id="${esc(r.id)}"><td>${RULE_KIND[r.type]}</td><td>${ruleText(r)}</td><td>${ruleScope(r)}</td><td><button type="button" class="quiet" data-teacher="remove">Remove</button></td></tr>`)
+    ? `<h4>Accepted rules</h4><table class="learned"><thead><tr><th>Kind</th><th>Rule</th><th>Applies</th><th>Since accepted</th><th></th></tr></thead><tbody>${t.rules
+        .map(
+          (r) => `<tr data-rule-id="${esc(r.id)}" class="${r.active ? '' : 'off'}"><td>${RULE_KIND[r.type]}</td><td>${ruleText(r)}</td><td>${r.active ? ruleScope(r) : 'Off: you undid it more than you kept it'}</td>
+          <td>${r.kept || r.undone ? `kept ${r.kept}, undone ${r.undone}` : 'not used yet'}</td><td><button type="button" class="quiet" data-teacher="remove">Remove</button></td></tr>`,
+        )
         .join('')}</tbody></table>`
     : '';
   const dropped = last?.dropped ?? [];

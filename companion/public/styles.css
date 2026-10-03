@@ -432,6 +432,8 @@ label.check { display: flex; gap: 6px; align-items: center; white-space: nowrap;
 @media (max-width: 640px) { .proposal-example { grid-template-columns: 1fr; } .rule-scope { margin-left: 0; } }
 table.learned { margin-top: 0; font-size: 12.5px; }
 table.learned td:first-child { color: var(--muted); }
+table.learned tr.off td { color: var(--muted); }
+table.learned tr.off .rule-to { font-weight: 400; text-decoration: line-through; }
 .settings-note { grid-column: 1 / -1; margin: 0; color: var(--ink-2); max-width: 70ch; }
 .no-dictation #dictate-btn, .no-dictation .deck-fns [data-kind="dictate"], .no-dictation .dictation-only { display: none !important; }
 .demo-banner { background: var(--warn); color: var(--sheet); font-size: 13px; }

@@ -16,6 +16,11 @@
 // it adds already appears in your own narratives (no invented facts). You then
 // accept or reject each one. Accepted rules live in teacher.json and apply on
 // the next draft; the model is never in the click path.
+//
+// Accepted rules keep earning their place. Every later edit where a rule
+// changed the draft is a vote: you kept its wording, or you undid it.
+// Accepting counts as one keep; once undos outnumber keeps, the rule turns
+// itself off. No opinions of its own: it follows what you change, either way.
 
 import fs from 'node:fs';
 import { ollamaChat } from './ai.js';
@@ -119,9 +124,10 @@ export function teacherPrompt(examples, { accepted = [] } = {}) {
     "You improve a deterministic drafter of lawyers' billing narratives. It turns shorthand notes into a narrative with fixed rules (shorthand expansion, past tense, joining actions). It cannot think; it can only follow rules you write.",
     'Each example shows NOTES (typed or dictated), DRAFT (what the rules produced) and FINAL (what the lawyer actually billed). Write rules that would make future drafts closer to FINAL.',
     'Rule types:',
-    '- phrase: shorthand as it appears in NOTES -> the wording to use. Applied before drafting. Example: {"type":"phrase","from":"spa","to":"stock purchase agreement"}',
-    '- fix: words as they appear in DRAFT -> the words used in FINAL. Applied to the finished draft. Example: {"type":"fix","from":"regarding the same","to":"regarding same"}',
-    '- verb: a verb the drafter left in the present tense -> its past tense. Example: {"type":"verb","from":"redline","to":"redlined"}',
+    '- phrase: shorthand as it appears in NOTES -> the wording FINAL uses for it. Applied before drafting. Shape: {"type":"phrase","from":"<shorthand>","to":"<wording>"}',
+    '- fix: words as they appear in DRAFT -> the words FINAL uses instead. Applied to the finished draft. Shape: {"type":"fix","from":"<draft words>","to":"<final words>"}',
+    '- verb: a verb the drafter left in the present tense -> the past tense FINAL uses. Shape: {"type":"verb","from":"<verb>","to":"<past tense>"}',
+    'Learn only from what this lawyer changed. Do not apply your own style preferences; if the lawyer changes something both ways, leave it alone.',
     'scope: "everywhere" if the lawyer makes the same change on more than one matter; otherwise the matter id from the example.',
     'Use the shortest shorthand that carries the meaning ("cp", not "cp checklist"), so the rule fires on new notes too.',
     'Only use words that appear in FINAL. Never add names, facts, amounts or dates that a rule would insert into unrelated entries. Prefer short, general rules that would fire again; skip one-off rewrites.',
@@ -162,9 +168,39 @@ export class Teacher {
     if (this.file) fs.writeFileSync(this.file, JSON.stringify(this.state, null, 2));
   }
 
-  /** Accepted rules, for the phrasebook to apply. */
+  /** Accepted rules still in use (not undone more than kept), for the phrasebook to apply. */
   rules() {
-    return this.state.rules;
+    const votes = this.#votes();
+    return this.state.rules.filter((r) => votes.get(r.id)?.active !== false);
+  }
+
+  /**
+   * For each accepted rule, the edits since you accepted it where it changed
+   * the draft: did what you billed keep its wording (kept) or undo it (undone)?
+   * Cached until there are new edits or rules.
+   */
+  #votes() {
+    const key = `${this.phrasebook.corrections.length}|${this.state.rules.map((r) => r.id).join(',')}`;
+    if (this.cache?.key === key) return this.cache.votes;
+    const votes = new Map();
+    for (const rule of this.state.rules) {
+      const others = this.state.rules.filter((r) => r !== rule);
+      let kept = 0;
+      let undone = 0;
+      for (const c of this.phrasebook.corrections) {
+        if (!(c.at > (rule.accepted_at ?? 0)) || !c.notes?.trim() || (rule.matter && c.matter !== rule.matter)) continue;
+        const draft = (rules) => draftNarrative(c.notes, this.phrasebook.options(c.matter, rules, { learned: false, taught: false }));
+        const without = draft(others);
+        const withRule = draft([...others, rule]);
+        if (without === withRule) continue; // didn't fire on this entry
+        const delta = wordDistance(withRule, c.final) - wordDistance(without, c.final);
+        if (delta < 0) kept++;
+        else if (delta > 0) undone++;
+      }
+      votes.set(rule.id, { kept, undone, active: undone <= kept + 1 }); // accepting counts as one keep
+    }
+    this.cache = { key, votes };
+    return votes;
   }
 
   status() {
@@ -176,7 +212,7 @@ export class Teacher {
       model: this.getConfig().ai?.model ?? '',
       lastRun: this.state.lastRun,
       proposals: this.state.proposals,
-      rules: this.state.rules,
+      rules: this.state.rules.map((r) => ({ ...r, ...(this.#votes().get(r.id) ?? { kept: 0, undone: 0, active: true }) })),
     };
   }
 

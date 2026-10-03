@@ -255,7 +255,7 @@
         <p class="wide settings-note">Working past midnight needs no answer. The timer keeps running and the time is split at midnight onto each day, or kept on the day you started if you choose that above. deck-time only asks once, if a timer from last night is still going in the morning and nothing was logged on it for two hours before then.</p>
 
         <h3>Phrasebook <span id="phrasebook-status" class="status"></span></h3>
-        <p class="wide settings-note">Drafts are instant and use no AI model: shorthand is expanded, verbs go into the past tense, and actions are joined. Teach it your own shorthand below. It also learns from you automatically: when you export, every change you made to a draft is remembered for that matter right away, and everywhere once you've made it twice. Recent corrections count more than old ones.</p>
+        <p class="wide settings-note">Drafts are instant and use no AI model: shorthand is expanded, verbs go into the past tense, and actions are joined. Teach it your own shorthand below. It also learns from you automatically: when you export, every change you made to a draft is remembered for that matter right away, and everywhere once you've made it on two different matters. Recent corrections count more than old ones. It starts empty and has no opinions of its own: if you undo something it learned, the undo cancels it.</p>
         <label class="wide">Your shorthand (one per line)
           <textarea name="phrasebook" rows="5" spellcheck="false" class="mono" placeholder="officer cert = officer's certificate&#10;pike = Project Pike&#10;wg = working group"></textarea>
         </label>
@@ -263,7 +263,7 @@
 
         <h3 class="ai-only">Teacher <span id="teacher-status" class="status"></span></h3>
         <div class="wide ai-only teacher">
-          <p class="settings-note">The phrasebook learns one edit at a time. The teacher looks for the patterns behind your edits, using the local model on this computer (nothing leaves it). It proposes rules the instant drafter can follow on its own: shorthand ("cp = conditions precedent"), fixes, and verbs it didn't know. Each rule is first replayed against your past edits. It's only shown if it would have fixed at least two of them and made none worse, and only if it uses words you've billed before. Nothing changes until you accept a rule. Drafting never waits on the model.</p>
+          <p class="settings-note">The phrasebook learns one edit at a time. The teacher looks for the patterns behind your edits, using the local model on this computer (nothing leaves it). It proposes rules the instant drafter can follow on its own: shorthand ("cp = conditions precedent"), fixes, and verbs it didn't know. Each rule is first replayed against your past edits. It's only shown if it would have fixed at least two of them and made none worse, and only if it uses words you've billed before. Nothing changes until you accept a rule. Accepted rules keep a tally: each later draft where you kept a rule's wording counts for it, and each one where you changed it back counts against it. Once your undos outnumber your keeps (accepting counts as one keep), the rule turns itself off. Drafting never waits on the model.</p>
           <div class="teacher-run">
             <button type="button" id="teacher-run">Review my edits</button>
             <span id="teacher-progress" class="settings-note" hidden>Reviewing with the local model; this takes about a minute…</span>

@@ -410,7 +410,7 @@
     { id: 'demo-2', type: 'phrase', from: 'board deck', to: 'board presentation', matter: '41120.0001', reason: 'On Stark, a board deck is always billed as a board presentation.', evidence: { improved: 2, worsened: 0, matters: ['41120.0001'], examples: [{ before: 'Prepared board deck for stark meeting.', after: 'Prepared board presentation for stark meeting.', final: 'Prepared board presentation for Stark meeting.' }] } },
     { id: 'demo-3', type: 'phrase', from: 'deal team', to: 'working group', matter: '10234.0007', reason: 'On Acme, the deal team is billed as the working group.', evidence: { improved: 2, worsened: 0, matters: ['10234.0007'], examples: [{ before: 'Emailed deal team regarding open points on stock purchase agreement.', after: 'Emailed working group regarding open points on stock purchase agreement.', final: 'Emailed working group regarding open points on stock purchase agreement.' }] } },
   ];
-  const teacherStatus = () => ({ running: teach.running, edits: 9, ready: true, model: 'simulated', lastRun: teach.lastRun, proposals: teach.proposals ?? [], rules: teach.rules });
+  const teacherStatus = () => ({ running: teach.running, edits: 9, ready: true, model: 'simulated', lastRun: teach.lastRun, proposals: teach.proposals ?? [], rules: teach.rules.map((r) => ({ ...r, kept: 0, undone: 0, active: true })) });
   /** Drafting options from accepted rules (the installed app's phrasebook does this). */
   function taughtOpts(matterId) {
     const key = keyOf(getMatter(matterId));

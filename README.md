@@ -142,7 +142,10 @@ about a millisecond, and they never add facts that aren't in your notes:
   sent to client.*
 - **It learns from your edits.** Each draft is remembered; at export, whatever
   you changed is logged to `corrections.jsonl` and becomes a substitution. It
-  applies on that matter right away, and everywhere once you've made it twice.
+  applies on that matter right away, and everywhere once you've made the same
+  change on two different matters. It starts empty and has no opinions of its
+  own: if you undo something it learned (it wrote "Analyzed", you put
+  "Reviewed" back), the undo cancels it rather than teaching the opposite.
   Corrections fade with a 45-day half-life, so a deal's vocabulary fades after
   it closes. Settings lists what's been learned and where it applies.
 - The same learned phrasing feeds Whisper's vocabulary hint, so dictation
@@ -176,7 +179,12 @@ your past edits. A rule is shown only if all of these hold:
 A rule seen on one matter only is kept to that matter. You accept or reject
 each one, with a before/after example. Accepted rules live in `teacher.json` in
 your data folder, apply to the next draft, and can be removed. Rejected rules
-aren't proposed again. A review takes about a minute (gemma3:12b on an M4 Pro).
+aren't proposed again.
+
+Accepted rules keep earning their place. Each later draft where a rule changed
+the wording is a vote: you kept it, or you changed it back. Accepting counts as
+one keep. Once your undos outnumber your keeps, the rule turns itself off, and
+Settings shows the tally. A review takes about a minute (gemma3:12b on an M4 Pro).
 The model unloads two minutes later, and drafting never waits on it.
 
 Every export logs each edited entry to `corrections.jsonl` with its notes.

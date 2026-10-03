@@ -6,8 +6,9 @@
 //   draft it started from; the words you changed become substitutions
 //   ("officer certificate" -> "officer's certificate"). They're scored by how
 //   often and how recently you made them (45-day half-life), per matter and
-//   overall: one correction applies on that matter right away; two or more
-//   apply everywhere. A matter's vocabulary fades after it goes quiet.
+//   overall: one correction applies on that matter right away; the same change
+//   on two different matters applies everywhere. A matter's vocabulary fades
+//   after it goes quiet.
 // - Frequent phrases from your past narratives feed Whisper's vocabulary hint.
 // - Rules the teacher proposed and you accepted (teacher.js): shorthand, fixes
 //   and verbs, applied here like everything else.
@@ -141,21 +142,47 @@ export class Phrasebook {
     return subs;
   }
 
-  /** Consolidation: re-derive learned substitutions with recency weighting. */
+  /**
+   * Consolidation: re-derive learned substitutions with recency weighting.
+   * Value-neutral: an edit that undoes a learned change (it wrote "Analyzed",
+   * you put "Reviewed" back) first cancels that change's score instead of
+   * teaching the opposite; only what's left over counts the other way.
+   */
   rebuild() {
     const now = this.now();
-    this.learned = new Map(); // from(lower) -> { from, global: Map(to -> score), matters: Map(matter -> Map(to -> score)) }
-    for (const c of this.corrections) {
+    this.learned = new Map(); // from(lower) -> { from, global: Map(to -> score), matters: Map(matter -> Map(to -> score)), undone: Map(to -> n) }
+    const entryFor = (from) => {
+      const k = from.toLowerCase();
+      if (!this.learned.has(k)) this.learned.set(k, { from, global: new Map(), matters: new Map(), undone: new Map(), seenOn: new Map() });
+      return this.learned.get(k);
+    };
+    const findTo = (map, to) => [...map.keys()].find((k) => k.toLowerCase() === to.toLowerCase());
+    for (const c of [...this.corrections].sort((a, b) => a.at - b.at)) {
       const weight = 0.5 ** ((now - c.at) / DAY / HALF_LIFE_DAYS);
       for (const { from, to } of learnFromEdit(c.draft, c.final)) {
-        const k = from.toLowerCase();
-        if (!this.learned.has(k)) this.learned.set(k, { from, global: new Map(), matters: new Map() });
-        const entry = this.learned.get(k);
-        entry.global.set(to, (entry.global.get(to) ?? 0) + weight);
+        let left = weight;
+        // Is this edit reversing a change learned earlier (to -> from)?
+        const forward = this.learned.get(to.toLowerCase());
+        const fwdTo = forward && findTo(forward.global, from);
+        if (fwdTo && forward.global.get(fwdTo) > 0) {
+          const cancel = Math.min(forward.global.get(fwdTo), left);
+          forward.global.set(fwdTo, forward.global.get(fwdTo) - cancel);
+          for (const [m, mm] of forward.matters) {
+            // The matter it was undone on loses it outright; other matters lose what the global score lost.
+            if (mm.has(fwdTo)) mm.set(fwdTo, Math.max(0, mm.get(fwdTo) - (m === c.matter ? weight : cancel)));
+          }
+          forward.undone.set(fwdTo, (forward.undone.get(fwdTo) ?? 0) + 1);
+          left -= cancel;
+        }
+        if (left <= 1e-9) continue;
+        const entry = entryFor(from);
+        entry.global.set(to, (entry.global.get(to) ?? 0) + left);
+        if (!entry.seenOn.has(to)) entry.seenOn.set(to, new Set());
+        entry.seenOn.get(to).add(c.matter ?? '');
         if (c.matter) {
           if (!entry.matters.has(c.matter)) entry.matters.set(c.matter, new Map());
           const mm = entry.matters.get(c.matter);
-          mm.set(to, (mm.get(to) ?? 0) + weight);
+          mm.set(to, (mm.get(to) ?? 0) + left);
         }
       }
     }
@@ -167,7 +194,13 @@ export class Phrasebook {
     const local = matter && entry.matters.get(matter) ? best(entry.matters.get(matter)) : null;
     if (local && local[1] >= MATTER_THRESHOLD) return local[0];
     const global = best(entry.global);
-    return global && global[1] >= GLOBAL_THRESHOLD ? global[0] : null;
+    return global && this.#everywhere(entry, global[0], global[1]) ? global[0] : null;
+  }
+
+  /** Everywhere = strong enough overall, and seen on more than one matter (one matter's habit stays on that matter). */
+  #everywhere(entry, to, score) {
+    const seen = entry.seenOn.get(to) ?? new Set();
+    return score >= GLOBAL_THRESHOLD && (seen.size >= 2 || seen.has(''));
   }
 
   /**
@@ -175,13 +208,13 @@ export class Phrasebook {
    * accepted teacher rules. `extra` adds candidate rules (the teacher replays
    * your past edits with them before proposing anything).
    */
-  options(matter, extra = [], { learned = true } = {}) {
+  options(matter, extra = [], { learned = true, taught: useTaught = true } = {}) {
     const rules = [];
     for (const entry of learned ? this.learned.values() : []) {
       const to = this.#choose(entry, matter);
       if (to) rules.push({ re: new RegExp(`(?<![\\w'])${escapeRe(entry.from)}(?![\\w'])`, 'gi'), to });
     }
-    const taught = [...this.taught(), ...extra].filter((r) => !r.matter || r.matter === matter);
+    const taught = [...(useTaught ? this.taught() : []), ...extra].filter((r) => !r.matter || r.matter === matter);
     const phrases = parseCustom(this.custom());
     const verbs = {};
     for (const r of taught) {
@@ -210,7 +243,7 @@ export class Phrasebook {
     for (const entry of this.learned.values()) {
       for (const [to, score] of entry.global) {
         const matters = [...entry.matters.entries()].filter(([, mm]) => (mm.get(to) ?? 0) >= MATTER_THRESHOLD).map(([m]) => m);
-        rows.push({ from: entry.from, to, score: Math.round(score * 100) / 100, everywhere: score >= GLOBAL_THRESHOLD, matters });
+        rows.push({ from: entry.from, to, score: Math.round(score * 100) / 100, everywhere: this.#everywhere(entry, to, score), matters, undone: entry.undone.get(to) ?? 0 });
       }
     }
     return rows.sort((x, y) => y.score - x.score).slice(0, limit);
@@ -221,7 +254,7 @@ export class Phrasebook {
     const terms = new Map();
     const bump = (t, n) => terms.set(t, (terms.get(t) ?? 0) + n);
     for (const v of Object.values(parseCustom(this.custom()))) bump(v, 100);
-    for (const row of this.list(100)) bump(row.to, 50);
+    for (const row of this.list(100)) if (row.everywhere || row.matters.length) bump(row.to, 50); // not ones you've undone
     const counts = new Map();
     for (const ex of this.corpus()) {
       const w = String(ex.narrative ?? '').toLowerCase().replace(/[^a-z0-9'& -]+/g, ' ').split(/\s+/).filter(Boolean);
@@ -240,6 +273,8 @@ export class Phrasebook {
   }
 
   stats() {
-    return { corrections: this.corrections.length, learned: this.list(1000).length, active: this.list(1000).filter((r) => r.everywhere || r.matters.length).length };
+    const rows = this.list(1000);
+    const active = rows.filter((r) => r.everywhere || r.matters.length);
+    return { corrections: this.corrections.length, learned: rows.length, active: active.length, undone: rows.filter((r) => r.undone && !r.everywhere && !r.matters.length).length };
   }
 }
