@@ -1315,23 +1315,29 @@ function showAiUseDetail() {
 }
 $('#ai-use-enabled').addEventListener('change', showAiUseDetail);
 
-$('#settings-form').addEventListener('submit', guard(async (ev) => {
-  ev.preventDefault();
+/** A Settings field's value as stored in config. */
+function settingValue(el) {
+  let v = el.type === 'checkbox' ? el.checked : el.value;
+  if (el.type === 'number' || el.dataset.type === 'number') v = +v;
+  if (el.dataset.type === 'bool') v = v === 'true';
+  if (el.name === 'tim.defaults') v = parseKeyValues(v);
+  return v;
+}
+
+// Settings save as you change them (text boxes when you leave them), so a
+// checkbox can't look on while it's still off.
+$('#settings-form').addEventListener('change', guard(async (ev) => {
+  const el = ev.target;
+  if (!el.name) return;
   const next = {};
-  for (const el of ev.target.elements) {
-    if (!el.name) continue;
-    let v = el.type === 'checkbox' ? el.checked : el.value;
-    if (el.type === 'number' || el.dataset.type === 'number') v = +v;
-    if (el.dataset.type === 'bool') v = v === 'true';
-    if (el.name === 'tim.defaults') v = parseKeyValues(v);
-    setPath(next, el.name, v);
-  }
+  setPath(next, el.name, settingValue(el));
   config = await api('/api/config', { method: 'PUT', body: next });
   fillJurisdictionOptions();
-  toast('Settings saved');
-  renderSettings();
-  refreshDay(true); // e.g. AI toggles appear or disappear on entries
+  toast('Saved');
+  // Some settings change what entries show (AI toggles, JX names, the daily target).
+  if (/^(aiUse|jurisdictions|dailyTarget|rounding|overnight)/.test(el.name)) refreshDay(true);
 }));
+$('#settings-form').addEventListener('submit', (ev) => ev.preventDefault()); // Enter in a field: it's already saved
 
 // Keyboard: 1–8 press the matching key (when not typing).
 document.addEventListener('keydown', guard(async (ev) => {
