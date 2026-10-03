@@ -223,6 +223,76 @@ function showPhrasebook(p) {
     : '';
 }
 
+// ---------- teacher ----------
+
+const RULE_KIND = { phrase: 'Shorthand', fix: 'Fix', verb: 'Verb' };
+
+/** "20411.0002" (client.matter) -> the matter's short name, for showing where a rule applies. */
+function matterByKey(key) {
+  const m = state?.matters.find((x) => [x.client_no, x.matter_no].filter(Boolean).join('.') === key);
+  return m ? m.label || m.name : key;
+}
+const ruleScope = (r) => (r.matter ? esc(matterByKey(r.matter)) : 'Everywhere');
+const ruleText = (r) => `<span class="rule-from">${esc(r.from)}</span> → <span class="rule-to">${esc(r.to)}</span>`;
+
+function showTeacher(t) {
+  const last = t.lastRun;
+  $('#teacher-status').textContent = !t.ready
+    ? `needs a few edited drafts first (${t.edits} so far)`
+    : last
+      ? `last review ${new Date(last.at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: ${last.note ?? `${last.kept} of ${last.suggested} suggestions passed`}`
+      : `${t.edits} edits to learn from`;
+  $('#teacher-run').disabled = t.running || !t.ready;
+  $('#teacher-progress').hidden = !t.running;
+  $('#teacher-proposals').innerHTML = t.proposals.length
+    ? `<h4>Proposed rules</h4>${t.proposals
+        .map(
+          (p) => `<div class="proposal" data-proposal-id="${esc(p.id)}">
+        <div class="proposal-head"><span class="rule-kind">${RULE_KIND[p.type]}</span> ${ruleText(p)} <span class="rule-scope">${ruleScope(p)}</span></div>
+        <p class="proposal-why">${esc(p.reason)} Would have fixed ${p.evidence.improved} past draft${p.evidence.improved === 1 ? '' : 's'}${p.evidence.matters.length > 1 ? ` on ${p.evidence.matters.length} matters` : ''}; made none worse.</p>
+        ${p.evidence.examples
+          .slice(0, 1)
+          .map((x) => `<div class="proposal-example"><div><small>Draft was</small>${esc(x.before)}</div><div><small>With this rule</small>${esc(x.after)}</div><div><small>You billed</small>${esc(x.final)}</div></div>`)
+          .join('')}
+        <div class="proposal-actions"><button type="button" class="primary" data-teacher="accept">Accept</button><button type="button" data-teacher="reject">Reject</button></div>
+      </div>`,
+        )
+        .join('')}`
+    : '';
+  $('#teacher-rules').innerHTML = t.rules.length
+    ? `<h4>Rules in use</h4><table class="learned"><thead><tr><th>Kind</th><th>Rule</th><th>Applies</th><th></th></tr></thead><tbody>${t.rules
+        .map((r) => `<tr data-rule-id="${esc(r.id)}"><td>${RULE_KIND[r.type]}</td><td>${ruleText(r)}</td><td>${ruleScope(r)}</td><td><button type="button" class="quiet" data-teacher="remove">Remove</button></td></tr>`)
+        .join('')}</tbody></table>`
+    : '';
+  const dropped = last?.dropped ?? [];
+  $('#teacher-dropped').hidden = !dropped.length;
+  $('#teacher-dropped ul').innerHTML = dropped.map((d) => `<li>${RULE_KIND[d.type] ?? d.type}: ${ruleText(d)}: ${esc(d.why)}</li>`).join('');
+}
+
+$('#teacher-run').addEventListener('click', guard(async () => {
+  $('#teacher-run').disabled = true;
+  $('#teacher-progress').hidden = false;
+  try {
+    const t = await api('/api/teacher/run', { method: 'POST', body: {} });
+    showTeacher(t);
+    toast(t.proposals.length ? `${t.proposals.length} rule${t.proposals.length === 1 ? '' : 's'} to review` : t.lastRun?.note ?? 'No new rules this time');
+  } finally {
+    api('/api/teacher').then(showTeacher).catch(() => {});
+  }
+}));
+
+$('.teacher').addEventListener('click', guard(async (ev) => {
+  const btn = ev.target.closest('[data-teacher]');
+  if (!btn) return;
+  const action = btn.dataset.teacher;
+  if (action === 'remove') {
+    showTeacher(await api(`/api/teacher/rules/${btn.closest('[data-rule-id]').dataset.ruleId}`, { method: 'DELETE' }));
+    return toast('Rule removed');
+  }
+  showTeacher(await api(`/api/teacher/proposals/${btn.closest('[data-proposal-id]').dataset.proposalId}`, { method: 'POST', body: { action } }));
+  toast(action === 'accept' ? 'Rule accepted: it applies to your next draft' : 'Rejected; it won’t be proposed again');
+}));
+
 // ---------- code memory ----------
 
 function showCodeMemory(m) {
@@ -780,6 +850,7 @@ async function renderSettings() {
   pill.textContent = config.timekeeper.id ? `Timekeeper ${config.timekeeper.id}` : 'Set a timekeeper ID or learn it from an export';
   api('/api/codes/memory').then(showCodeMemory).catch(() => {});
   api('/api/phrasebook').then(showPhrasebook).catch(() => {});
+  if (config.features?.ai !== false) api('/api/teacher').then(showTeacher).catch(() => {});
 
 }
 

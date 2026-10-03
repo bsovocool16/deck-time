@@ -38,6 +38,7 @@ export function createServer({
   coder = new CodeMemory(), // learned task/activity codes (see coder.js)
   phrasebook = new Phrasebook(), // learned phrasing for the instant drafter (see phrasebook.js)
   raiseWindow = raise, // brings the open deck-time page forward (see window.js)
+  teacher = null, // offline rule proposals from your edits (see teacher.js); null = not available
 }) {
   const clients = new Set();
   const pages = new Map(); // SSE response -> { display, browser, at }: how each open page is running
@@ -79,6 +80,10 @@ export function createServer({
     workspace: workspace?.get() ?? 'real',
     daily_target: Number(getConfig().dailyTarget) || 0,
   });
+  const teacherOrFail = () => {
+    if (!teacher || getConfig().features?.ai === false) throw httpError(501, 'The teacher needs the full edition (a local model through Ollama)');
+    return teacher;
+  };
   const matterKey = (m) => [m.client_no, m.matter_no].filter(Boolean).join('.');
   /** Instant codes for an entry: learned from your history, else keyword rules. No AI. */
   const instantCodes = (matter, text) => {
@@ -170,6 +175,11 @@ export function createServer({
       return { ...saved, code_source: picked.source };
     }],
     ['GET', /^\/api\/codes\/memory$/, () => coder.stats()],
+    // The teacher: reviews your edits with the local model when you ask; you accept or reject each rule.
+    ['GET', /^\/api\/teacher$/, () => teacherOrFail().status()],
+    ['POST', /^\/api\/teacher\/run$/, () => teacherOrFail().run()],
+    ['POST', /^\/api\/teacher\/proposals\/([\w-]+)$/, (b, _, [id]) => teacherOrFail().decide(id, b.action)],
+    ['DELETE', /^\/api\/teacher\/rules\/([\w-]+)$/, (_, __, [id]) => teacherOrFail().remove(id)],
     ['GET', /^\/api\/phrasebook$/, () => ({ ...phrasebook.stats(), learned: phrasebook.list(50) })],
     ['POST', /^\/api\/codes\/import$/, (b) => {
       const files = Array.isArray(b.files) ? b.files : [String(b.text ?? '')];
@@ -291,12 +301,14 @@ export function createServer({
     const savedTo = path.join(exportDir, filename);
     fs.writeFileSync(savedTo, body);
     if (markExported) for (const e of entries) store.updateEntry(date, e.matter_id, { status: 'exported' }, e.part);
-    // Every export teaches the code memory how you code, and the phrasebook how you
-    // phrase things (what you changed from the instant draft). Never from demo data.
+    // Every export teaches the phrasebook (and the teacher) how you phrase things:
+    // what you changed from the instant draft, with the notes it came from. The
+    // phrasebook is per workspace, so demo edits stay in the demo.
+    for (const e of entries) {
+      if (e.draft && e.narrative.trim() !== e.draft.trim()) phrasebook.addCorrection({ draft: e.draft, final: e.narrative, notes: e.notes, matter: matterKey(e.matter) });
+    }
+    // And the code memory how you code. Never from demo data.
     if (workspace?.get() !== 'demo') {
-      for (const e of entries) {
-        if (e.draft && e.narrative.trim() !== e.draft.trim()) phrasebook.addCorrection({ draft: e.draft, final: e.narrative, matter: matterKey(e.matter) });
-      }
       coder.add(
         entries
           .filter((e) => e.task || e.activity)

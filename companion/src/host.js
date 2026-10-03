@@ -9,6 +9,8 @@ import { seedDemo } from './demo-seed.js';
 import { Dictation } from './dictation.js';
 import { createServer } from './server.js';
 import { Store } from './store.js';
+import { Teacher } from './teacher.js';
+import { DEMO_CORRECTIONS } from './demo-seed.js';
 
 export const DEFAULT_PUBLIC_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -36,6 +38,20 @@ export function switchableStore(initial) {
       return typeof value === 'function' ? value.bind(current) : value;
     },
   });
+}
+
+/** A handle that always calls through to the current object (e.g. this workspace's phrasebook). */
+function forward(current) {
+  return new Proxy(
+    {},
+    {
+      get(_, key) {
+        const target = current();
+        const value = target[key];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    },
+  );
 }
 
 /**
@@ -71,7 +87,8 @@ export async function startCompanion({ home = defaultHome(), edition = 'full', p
     resetDemo() {
       stores.demo?.close();
       stores.demo = null;
-      for (const f of [paths.demoDb, `${paths.demoDb}-wal`, `${paths.demoDb}-shm`]) fs.rmSync(f, { force: true });
+      for (const f of [paths.demoDb, `${paths.demoDb}-wal`, `${paths.demoDb}-shm`, paths.demoCorrections, paths.demoTeacher]) fs.rmSync(f, { force: true });
+      delete learning.demo; // fresh fictional edits, no taught rules
       if (workspaceName() === 'demo') store.use(open('demo'));
       return { workspace: workspaceName() };
     },
@@ -82,8 +99,27 @@ export async function startCompanion({ home = defaultHome(), edition = 'full', p
     : null;
 
   const coder = new CodeMemory(paths.codeMemory);
-  const phrasebook = new Phrasebook({ file: paths.corrections, custom: () => config.phrasebook, corpus: () => coder.examples });
-  const server = createServer({ store, getConfig, setConfig, dictation, publicDir, exportDir: paths.exports, workspace, coder, phrasebook });
+  // Phrasebook + teacher per workspace, so demo day's fictional edits never teach your real drafter.
+  const learning = {};
+  const openLearning = (name) => {
+    if (!learning[name]) {
+      const demo = name === 'demo';
+      if (demo && !fs.existsSync(paths.demoCorrections)) fs.writeFileSync(paths.demoCorrections, DEMO_CORRECTIONS.map((c) => JSON.stringify(c)).join('\n') + '\n');
+      let teacher = null;
+      const phrasebook = new Phrasebook({
+        file: demo ? paths.demoCorrections : paths.corrections,
+        custom: () => config.phrasebook,
+        corpus: () => coder.examples,
+        taught: () => teacher?.rules() ?? [],
+      });
+      teacher = new Teacher({ file: demo ? paths.demoTeacher : paths.teacher, phrasebook, getConfig });
+      learning[name] = { phrasebook, teacher };
+    }
+    return learning[name];
+  };
+  const phrasebook = forward(() => openLearning(workspaceName()).phrasebook);
+  const teacher = forward(() => openLearning(workspaceName()).teacher);
+  const server = createServer({ store, getConfig, setConfig, dictation, publicDir, exportDir: paths.exports, workspace, coder, phrasebook, teacher });
   const listenPort = port ?? config.port;
   await new Promise((resolve, reject) => {
     server.once('error', reject);

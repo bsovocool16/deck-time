@@ -9,8 +9,11 @@
 //   overall: one correction applies on that matter right away; two or more
 //   apply everywhere. A matter's vocabulary fades after it goes quiet.
 // - Frequent phrases from your past narratives feed Whisper's vocabulary hint.
+// - Rules the teacher proposed and you accepted (teacher.js): shorthand, fixes
+//   and verbs, applied here like everything else.
 //
-// Everything is plain counting over a small JSONL log; no AI model.
+// Everything is plain counting over a small JSONL log; no AI model. (The
+// teacher uses one offline to propose rules; drafting never does.)
 
 import fs from 'node:fs';
 
@@ -102,10 +105,11 @@ export class Phrasebook {
    * custom(): the user's "shorthand = expansion" text. corpus(): past examples
    * with narratives (the code memory's), for Whisper vocabulary.
    */
-  constructor({ file = null, custom = () => '', corpus = () => [], now = () => Date.now() } = {}) {
+  constructor({ file = null, custom = () => '', corpus = () => [], taught = () => [], now = () => Date.now() } = {}) {
     this.file = file;
     this.custom = custom;
     this.corpus = corpus;
+    this.taught = taught; // accepted teacher rules: [{ type: 'phrase' | 'fix' | 'verb', from, to, matter? }]
     this.now = now;
     this.corrections = [];
     if (file && fs.existsSync(file)) {
@@ -121,11 +125,16 @@ export class Phrasebook {
     this.rebuild();
   }
 
-  /** Log what you changed between an instant draft and the narrative you sent. Returns substitutions learned. */
-  addCorrection({ draft, final, matter = null, at = this.now() }) {
+  /**
+   * Log what you changed between an instant draft and the narrative you sent.
+   * Every edit is kept (the teacher learns from additions and rewrites too);
+   * returns the substitutions the phrasebook itself learned from it.
+   */
+  addCorrection({ draft, final, notes = '', matter = null, at = this.now() }) {
+    if (!String(draft ?? '').trim() || !String(final ?? '').trim()) return [];
+    if (String(draft).trim().replace(/\s+/g, ' ') === String(final).trim().replace(/\s+/g, ' ')) return [];
     const subs = learnFromEdit(draft, final);
-    if (!subs.length) return [];
-    const rec = { at, matter, draft, final };
+    const rec = { at, matter, notes, draft, final };
     this.corrections.push(rec);
     if (this.file) fs.appendFileSync(this.file, JSON.stringify(rec) + '\n');
     this.rebuild();
@@ -161,12 +170,24 @@ export class Phrasebook {
     return global && global[1] >= GLOBAL_THRESHOLD ? global[0] : null;
   }
 
-  /** Options for the drafter on a matter: custom shorthand plus learned fixes applied to the draft. */
-  options(matter) {
+  /**
+   * Options for the drafter on a matter: custom shorthand, learned fixes, and
+   * accepted teacher rules. `extra` adds candidate rules (the teacher replays
+   * your past edits with them before proposing anything).
+   */
+  options(matter, extra = [], { learned = true } = {}) {
     const rules = [];
-    for (const entry of this.learned.values()) {
+    for (const entry of learned ? this.learned.values() : []) {
       const to = this.#choose(entry, matter);
       if (to) rules.push({ re: new RegExp(`(?<![\\w'])${escapeRe(entry.from)}(?![\\w'])`, 'gi'), to });
+    }
+    const taught = [...this.taught(), ...extra].filter((r) => !r.matter || r.matter === matter);
+    const phrases = parseCustom(this.custom());
+    const verbs = {};
+    for (const r of taught) {
+      if (r.type === 'phrase') phrases[r.from.toLowerCase()] = r.to;
+      else if (r.type === 'verb') verbs[r.from.toLowerCase()] = r.to;
+      else if (r.type === 'fix') rules.push({ re: new RegExp(`(?<![\\w'])${escapeRe(r.from)}(?![\\w'])`, 'gi'), to: r.to });
     }
     rules.sort((x, y) => y.re.source.length - x.re.source.length); // longer phrases first
     const fix = (text) => {
@@ -180,7 +201,7 @@ export class Phrasebook {
       }
       return out;
     };
-    return { phrases: parseCustom(this.custom()), fix };
+    return { phrases, verbs, fix };
   }
 
   /** Learned substitutions for display: phrase, replacement, strength, and where it applies. */

@@ -103,7 +103,7 @@ export const BASE_PHRASES = {
 // ---------- verbs ----------
 
 /** Action verbs: base form -> past tense as written in a narrative. */
-const VERBS = {
+export const VERBS = {
   prepare: 'prepared',
   prep: 'prepared',
   send: 'sent',
@@ -183,16 +183,36 @@ const NO_SPLIT_AFTER = new Set([
   'further', 'final', 'initial', 'first', 'second', 'revised', 'draft', 'prior', 'latest', 'new', 'same',
 ]);
 
-/** Map any form (base, -s, -ing, -ed, past) to the base verb. */
-const VERB_FORMS = new Map();
-for (const [base, past] of Object.entries(VERBS)) {
+/** Every form of a verb (base, -ing, -ed, past) that maps back to its base. */
+function verbForms(base, past) {
   const stem = base.endsWith('e') ? base.slice(0, -1) : base;
   const doubled = /[^aeiou][aeiou][bdglmnprt]$/.test(base) && base.length <= 4 ? base + base.at(-1) : base;
   // No "-s" forms: in shorthand, "comments", "drafts" and "emails" are almost always nouns.
-  for (const form of [base, `${stem}ing`, `${doubled}ing`, past, `${base}ed`, `${stem}ed`]) VERB_FORMS.set(form, base);
+  return [base, `${stem}ing`, `${doubled}ing`, past, `${base}ed`, `${stem}ed`];
 }
+
+/** Map any form to the base verb. */
+const VERB_FORMS = new Map();
+for (const [base, past] of Object.entries(VERBS)) for (const form of verbForms(base, past)) VERB_FORMS.set(form, base);
 for (const v of ['call', 'calling', 'called', 'tc', 'tc\'d', 'phone', 'phoned', 'telephone']) VERB_FORMS.set(v, 'call');
 SPLITTING_VERBS.add('call');
+
+/**
+ * The verb tables for one draft: the built-in ones plus extra verbs taught to
+ * this drafter ({ base: past }, from the teacher), which also start new actions.
+ */
+function verbTables(extra = {}) {
+  const keys = Object.keys(extra);
+  if (!keys.length) return { verbs: VERBS, forms: VERB_FORMS, splitting: SPLITTING_VERBS };
+  const verbs = { ...VERBS, ...extra };
+  const forms = new Map(VERB_FORMS);
+  const splitting = new Set(SPLITTING_VERBS);
+  for (const base of keys) {
+    for (const form of verbForms(base, extra[base])) if (!forms.has(form)) forms.set(form, base);
+    splitting.add(base);
+  }
+  return { verbs, forms, splitting };
+}
 
 // ---------- tokens ----------
 
@@ -228,12 +248,15 @@ export function expandShorthand(tokens, phrases) {
 // ---------- actions ----------
 
 /** Break a clause into actions at strong verbs ("prepare X send Y" -> two actions; "X and send Y" too). */
-export function splitActions(tokens) {
+export function splitActions(tokens, { forms = VERB_FORMS, splitting = SPLITTING_VERBS } = {}) {
   const actions = [[]];
   tokens.forEach((tok, i) => {
-    const base = VERB_FORMS.get(bare(tok));
+    const base = forms.get(bare(tok));
     const prev = i > 0 ? bare(tokens[i - 1]) : null;
-    const startsNew = i > 0 && base && SPLITTING_VERBS.has(base) && (prev === 'and' || prev === 'then' || !NO_SPLIT_AFTER.has(prev)) && !VERB_FORMS.has(prev);
+    const joined = prev === 'and' || prev === 'then';
+    // Mid-clause "-ing" words are usually nouns ("stark meeting", "the filing"); they only start an action after "and"/"then".
+    const nounish = /ing$/.test(bare(tok)) && !joined;
+    const startsNew = i > 0 && base && splitting.has(base) && !nounish && (joined || !NO_SPLIT_AFTER.has(prev)) && !forms.has(prev);
     if (startsNew) {
       const cur = actions.at(-1);
       // "X and send Y": the joiner belongs to the output, not the action.
@@ -246,9 +269,9 @@ export function splitActions(tokens) {
 }
 
 /** One action -> narrative phrase, verb in the past tense. */
-function phraseAction(tokens) {
+function phraseAction(tokens, { verbs = VERBS, forms = VERB_FORMS } = {}) {
   const [first, ...rest] = tokens;
-  const base = VERB_FORMS.get(bare(first));
+  const base = forms.get(bare(first));
   let restTokens = rest;
   if (base === 'call') {
     // "call w/ client re X" / "tc w/ ..." -> "Telephone conference with client regarding X"
@@ -263,7 +286,7 @@ function phraseAction(tokens) {
   if (base === 'markup' || (base === undefined && bare(first) === 'mark' && bare(rest[0] ?? '') === 'up')) {
     return ['marked up', ...(base ? rest : rest.slice(1))].join(' ');
   }
-  if (base && base !== 'call') return [VERBS[base], ...restTokens].join(' ');
+  if (base && base !== 'call') return [verbs[base], ...restTokens].join(' ');
   return tokens.join(' ');
 }
 
@@ -285,17 +308,19 @@ function lowerFirst(s) {
 
 /**
  * Notes or dictation -> narrative. `phrases` adds or overrides shorthand
- * (custom and learned), and `fix` applies learned corrections to the result.
+ * (custom, learned and taught), `verbs` adds verbs ({ base: past }), and `fix`
+ * applies learned corrections to the result.
  */
-export function draftNarrative(notes, { phrases = {}, fix = (s) => s } = {}) {
+export function draftNarrative(notes, { phrases = {}, verbs = {}, fix = (s) => s } = {}) {
   const shorthand = { ...BASE_PHRASES, ...phrases };
+  const tables = verbTables(verbs);
   const clauses = String(notes ?? '')
     .split(/;|\n|(?<=[a-z0-9)])\.\s+/i)
     .map((c) => c.trim().replace(/[.;,\s]+$/, ''))
     .filter(Boolean);
   const out = clauses.map((clause, i) => {
     const tokens = expandShorthand(words(clause), shorthand);
-    const text = joinActions(splitActions(tokens).map(phraseAction)).replace(/\s+/g, ' ').trim();
+    const text = joinActions(splitActions(tokens, tables).map((a) => phraseAction(a, tables))).replace(/\s+/g, ' ').trim();
     return i === 0 ? capitalize(text) : lowerFirst(text);
   });
   if (!out.length) return '';

@@ -51,7 +51,7 @@ export async function draftNarrative({ config, matter, notes, hours, recent = []
   return cleanNarrative(await ollamaChat({ config, messages, fetchImpl }));
 }
 
-async function ollamaChat({ config, messages, format, temperature = 0.2, fetchImpl }) {
+export async function ollamaChat({ config, messages, format, temperature = 0.2, timeoutMs = 120_000, fetchImpl = fetch }) {
   const { baseUrl, model, keepAlive = '2m' } = config.ai;
   let res;
   try {
@@ -60,7 +60,7 @@ async function ollamaChat({ config, messages, format, temperature = 0.2, fetchIm
       headers: { 'Content-Type': 'application/json' },
       // keep_alive: free the model's memory shortly after use (deck-time should stay light).
       body: JSON.stringify({ model, messages, stream: false, format, keep_alive: keepAlive, options: { temperature } }),
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (e) {
     throw Object.assign(new Error(`Can't reach Ollama at ${baseUrl}. Is it running? (${e.message})`), { status: 503 });

@@ -37,11 +37,13 @@ requests. Matters, time, and config live in `~/.deck-time/`, **never in this rep
 | Runs as | `npm start` (Node 22.13+) | inside the Stream Deck plugin; nothing else to install |
 | Timers, keys, sidebar, notes, splits, client rules, `.TIM` export | yes | yes |
 | Instant narratives, phrasebook, task/activity codes | yes | yes |
+| Teacher (proposes drafting rules from your edits) | optional (local Ollama) | off |
 | Dictation | yes (sox + Whisper, about 0.5 to 1.6 GB model) | off |
 | Extra installs | sox, whisper.cpp and a Whisper model | none |
 
-Neither edition needs an AI model. The only large download is the Whisper
-model for dictation; skip it and everything else works.
+Neither edition needs an AI model to draft, code or export. The full edition
+has two optional downloads: the Whisper model for dictation, and a local Ollama
+model for the teacher (see below). Skip either and everything else works.
 | Data folder | `~/.deck-time` | `%APPDATA%\deck-time` (Windows) |
 
 **Office edition install:** install the Stream Deck app, then double-click
@@ -146,8 +148,49 @@ about a millisecond, and they never add facts that aren't in your notes:
 - The same learned phrasing feeds Whisper's vocabulary hint, so dictation
   hears your terms better too.
 
-The design principle: no model in the click path. A model can later act as an
-offline teacher that reviews accumulated corrections and proposes rules.
+The design principle: no model in the click path. Don't use a dumb model; use
+a smart model to write dumb code.
+
+## The teacher (full edition)
+
+The phrasebook learns one edit at a time. The teacher looks for the patterns
+behind your edits. In **Settings → Teacher**, *Review my edits* hands your
+logged edits (notes, instant draft, what you billed) to the local model once,
+through Ollama on this computer. It asks for rules the drafter can follow on
+its own:
+
+| Kind | Example | Applied |
+|---|---|---|
+| Shorthand | `cp` → conditions precedent (on the loan matter) | to notes, before drafting |
+| Fix | `board deck` → board presentation | to the finished draft |
+| Verb | `redline` → redlined | starts and past-tenses an action |
+
+Nothing the model says is trusted. Plain code replays each proposed rule against
+your past edits. A rule is shown only if all of these hold:
+
+- it would have brought at least two drafts closer to what you billed;
+- it made none worse;
+- every word it writes already appears in your own narratives, so it can't
+  invent facts.
+
+A rule seen on one matter only is kept to that matter. You accept or reject
+each one, with a before/after example. Accepted rules live in `teacher.json` in
+your data folder, apply to the next draft, and can be removed. Rejected rules
+aren't proposed again. A review takes about a minute (gemma3:12b on an M4 Pro).
+The model unloads two minutes later, and drafting never waits on it.
+
+Every export logs each edited entry to `corrections.jsonl` with its notes.
+Demo day has its own fictional edits (and its own `demo-teacher.json`), so you
+can try the teacher without touching real data. The office edition has no
+teacher, because it has no model.
+
+Setup (only for the teacher):
+
+```bash
+brew install ollama
+scripts/ollama-serve.sh &             # keeps models in ./models/ollama (gitignored)
+ollama pull gemma3:12b                # about 8 GB on disk; any chat model works (ai.model in config)
+```
 
 ## AI use disclosure
 
@@ -259,6 +302,7 @@ non-billable matter first.
 companion/src/     main.js (CLI entry), host.js (startup, editions, demo day),
                    server.js (HTTP + SSE), store.js (SQLite), export.js (.TIM/CSV),
                    drafter.js + phrasebook.js (instant narratives, learned edits),
+                   teacher.js + ai.js (offline rule proposals via local Ollama),
                    coder.js + codes.js (task/activity codes), dictation.js (sox +
                    whisper), window.js (Review key), demo-seed.js, time.js, config.js
 companion/public/  review UI (vanilla JS), includes a clickable virtual deck

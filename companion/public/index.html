@@ -261,6 +261,18 @@
         </label>
         <div class="wide" id="phrasebook-learned"></div>
 
+        <h3 class="ai-only">Teacher <span id="teacher-status" class="status"></span></h3>
+        <div class="wide ai-only teacher">
+          <p class="settings-note">The phrasebook learns one edit at a time. The teacher looks for the patterns behind your edits, using the local model on this computer (nothing leaves it). It proposes rules the instant drafter can follow on its own: shorthand ("cp = conditions precedent"), fixes, and verbs it didn't know. Each rule is first replayed against your past edits. It's only shown if it would have fixed at least two of them and made none worse, and only if it uses words you've billed before. Nothing changes until you accept a rule. Drafting never waits on the model.</p>
+          <div class="teacher-run">
+            <button type="button" id="teacher-run">Review my edits</button>
+            <span id="teacher-progress" class="settings-note" hidden>Reviewing with the local model; this takes about a minute…</span>
+          </div>
+          <div id="teacher-proposals"></div>
+          <div id="teacher-rules"></div>
+          <details id="teacher-dropped" hidden><summary>Suggestions the replay turned down</summary><ul></ul></details>
+        </div>
+
         <h3>Task &amp; activity codes <span id="code-memory-status" class="status"></span></h3>
         <p class="wide settings-note">Codes are suggested instantly from keyword rules and from how you've coded before: every export teaches deck-time, and you can give it a head start with past time exported from Intapp. Nothing here uses AI.</p>
         <label class="wide">Import past time from Intapp (.TIM files with task and activity codes)

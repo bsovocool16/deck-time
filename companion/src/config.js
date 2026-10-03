@@ -22,6 +22,9 @@ export function pathsFor(home) {
     exports: path.join(home, 'exports'),
     codeMemory: path.join(home, 'code-memory.jsonl'), // narratives + codes you've exported or imported
     corrections: path.join(home, 'corrections.jsonl'), // instant drafts vs. what you sent, for the phrasebook
+    teacher: path.join(home, 'teacher.json'), // rules the teacher proposed; the ones you accepted
+    demoCorrections: path.join(home, 'demo-corrections.jsonl'), // demo day's fictional edits, kept apart
+    demoTeacher: path.join(home, 'demo-teacher.json'),
   };
 }
 

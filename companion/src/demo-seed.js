@@ -1,7 +1,35 @@
 // Fictional matters and a sample day, for showing deck-time to people without
 // real client data on screen. Used by the "Demo day" switch and `npm run demo`.
 
+import { draftNarrative } from './drafter.js';
+
 const MIN = 60_000;
+const DAY = 86_400_000;
+
+// Fictional edits for demo day's teacher (Settings → Teacher): notes, the
+// instant draft, and what the "lawyer" billed instead. Patterns worth a rule:
+// "cp" means conditions precedent on the loan; "redline" is a verb; Stark
+// calls it a board presentation; Acme's deal team is the working group. The
+// last one is a one-off rewrite the teacher should leave alone.
+const DEMO_EDITS = [
+  ['20411.0002', 'update cp checklist and circulate to lender counsel', 'Updated conditions precedent checklist and circulated to lender counsel.'],
+  ['20411.0002', 'rev borrower cp deliverables', 'Reviewed borrower conditions precedent deliverables.'],
+  ['20411.0002', 'redline credit agmt per lender comments', 'Redlined credit agreement per lender comments.'],
+  ['52009.0004', 'redline engagement letter', 'Redlined engagement letter.'],
+  ['41120.0001', 'prepare board deck for stark mtg', 'Prepared board presentation for Stark meeting.'],
+  ['41120.0001', 'revise board deck per client comments', 'Revised board presentation per client comments.'],
+  ['10234.0007', 'email deal team re open points on spa', 'Emailed working group regarding open points on stock purchase agreement.'],
+  ['10234.0007', 'call w/ deal team re signing logistics', 'Telephone conference with working group regarding signing logistics.'],
+  ['30877.0015', 'rev hooli opp to mtd', 'Analyzed Hooli opposition to motion to dismiss and outlined reply arguments.'],
+];
+
+export const DEMO_CORRECTIONS = DEMO_EDITS.map(([matter, notes, final], i) => ({
+  at: Date.now() - (DEMO_EDITS.length - i) * DAY,
+  matter,
+  notes,
+  draft: draftNarrative(notes),
+  final,
+}));
 
 const MATTERS = [
   { name: 'Acme / Globex Merger', label: 'Acme M&A', client_no: '10234', matter_no: '0007', color: '#2f5d8a' }, // M&A: no task codes

@@ -401,10 +401,29 @@
 
   const codesFor = (matter) => (matter?.code_set && config.codes.taskSets[matter.code_set] ? { tasks: config.codes.taskSets[matter.code_set].codes, activities: config.codes.activities } : null);
 
+  // ---------- teacher (simulated: the installed app asks a local model; here, the rules it found on the demo edits) ----------
+
+  const teach = { rules: [], proposals: null, lastRun: null, running: false };
+  const keyOf = (m) => [m?.client_no, m?.matter_no].filter(Boolean).join('.');
+  const TEACHER_FINDINGS = [
+    { id: 'demo-1', type: 'verb', from: 'redline', to: 'redlined', reason: '"Redline" is consistently billed in the past tense.', evidence: { improved: 2, worsened: 0, matters: ['20411.0002', '52009.0004'], examples: [{ before: 'Redline credit agreement per lender comments.', after: 'Redlined credit agreement per lender comments.', final: 'Redlined credit agreement per lender comments.' }] } },
+    { id: 'demo-2', type: 'phrase', from: 'board deck', to: 'board presentation', matter: '41120.0001', reason: 'On Stark, a board deck is always billed as a board presentation.', evidence: { improved: 2, worsened: 0, matters: ['41120.0001'], examples: [{ before: 'Prepared board deck for stark meeting.', after: 'Prepared board presentation for stark meeting.', final: 'Prepared board presentation for Stark meeting.' }] } },
+    { id: 'demo-3', type: 'phrase', from: 'deal team', to: 'working group', matter: '10234.0007', reason: 'On Acme, the deal team is billed as the working group.', evidence: { improved: 2, worsened: 0, matters: ['10234.0007'], examples: [{ before: 'Emailed deal team regarding open points on stock purchase agreement.', after: 'Emailed working group regarding open points on stock purchase agreement.', final: 'Emailed working group regarding open points on stock purchase agreement.' }] } },
+  ];
+  const teacherStatus = () => ({ running: teach.running, edits: 9, ready: true, model: 'simulated', lastRun: teach.lastRun, proposals: teach.proposals ?? [], rules: teach.rules });
+  /** Drafting options from accepted rules (the installed app's phrasebook does this). */
+  function taughtOpts(matterId) {
+    const key = keyOf(getMatter(matterId));
+    const phrases = {};
+    const verbs = {};
+    for (const r of teach.rules.filter((x) => !x.matter || x.matter === key)) (r.type === 'verb' ? verbs : phrases)[r.from] = r.to;
+    return { phrases, verbs };
+  }
+
   function draft(date, matterId, part) {
     const e = getEntry(date, matterId, part);
     if (!e.notes.trim()) throw err(400, 'Add a few words of notes first');
-    const narrative = D.draftNarrative(e.notes);
+    const narrative = D.draftNarrative(e.notes, taughtOpts(matterId));
     const saved = updateEntry(date, matterId, { narrative }, part);
     emit('drafted');
     const codes = codesFor(getMatter(matterId));
@@ -427,7 +446,7 @@
         total_hours: total,
         entries: sized.map((b) => {
           const notes = b.notes.map((n) => n.text).join('; ');
-          return withCodes({ notes, narrative: notes ? D.draftNarrative(notes) : '', hours: b.hours, task: b.task, range: [b.start, b.end] });
+          return withCodes({ notes, narrative: notes ? D.draftNarrative(notes, taughtOpts(matterId)) : '', hours: b.hours, task: b.task, range: [b.start, b.end] });
         }),
       };
     }
@@ -435,7 +454,7 @@
     if (clauses.length < 2) throw err(400, 'Only one task in the notes. Add notes for each task, or use Next task while you work.');
     const weight = (c) => (/call|conference|meeting/i.test(c) ? 1 : /email|letter/i.test(c) ? 1.5 : 3);
     const sized = A.normalizeSplit(clauses.map((c) => ({ notes: c, hours: weight(c) })), totalHours, config.rounding.increment);
-    return { mode: 'estimate', total_hours: totalHours, entries: sized.map((e) => withCodes({ ...e, narrative: D.draftNarrative(e.notes) })) };
+    return { mode: 'estimate', total_hours: totalHours, entries: sized.map((e) => withCodes({ ...e, narrative: D.draftNarrative(e.notes, taughtOpts(matterId)) })) };
   }
 
   // ---------- simulated dictation ----------
@@ -503,6 +522,32 @@
     }],
     ['GET', '/api/ai/status', () => ({ reachable: false, installed: false, model: 'not used', models: [] })],
     ['GET', '/api/phrasebook', () => ({ corrections: 0, learned: [], active: 0 })],
+    ['GET', '/api/teacher', () => teacherStatus()],
+    ['POST', '/api/teacher/run', async () => {
+      teach.running = true;
+      await sleep(2500); // the real review takes about a minute on a local model
+      teach.running = false;
+      const decided = new Set([...teach.rules.map((r) => r.id), ...(teach.rejected ?? [])]);
+      teach.proposals = TEACHER_FINDINGS.filter((p) => !decided.has(p.id));
+      teach.lastRun = { at: Date.now(), reviewed: 9, suggested: 12, kept: teach.proposals.length, dropped: [
+        { type: 'fix', from: 'Reviewed', to: 'Analyzed', why: 'only one past draft supports it' },
+        { type: 'phrase', from: 'mtd', to: 'motion to strike', why: 'adds words you never used (strike)' },
+      ] };
+      return teacherStatus();
+    }],
+    ['POST', /^\/api\/teacher\/proposals\/([\w-]+)$/, (b, _, [id]) => {
+      const i = (teach.proposals ?? []).findIndex((p) => p.id === id);
+      if (i < 0) throw err(404, 'Proposal not found');
+      const [p] = teach.proposals.splice(i, 1);
+      if (b.action === 'accept') teach.rules.push(p);
+      else (teach.rejected ??= []).push(p.id);
+      return teacherStatus();
+    }],
+    ['DELETE', /^\/api\/teacher\/rules\/([\w-]+)$/, (_, __, [id]) => {
+      teach.rules = teach.rules.filter((r) => r.id !== id);
+      (teach.rejected ??= []).push(id);
+      return teacherStatus();
+    }],
     ['GET', '/api/codes/memory', () => ({ examples: 0, bySource: {}, codeSets: [] })],
     ['POST', '/api/tim/learn', () => { throw err(400, 'Learning from an Intapp export works in the installed app.'); }],
     ['GET', '/api/matters', (_, q) => listMatters(q.get('all') === '1')],
