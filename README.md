@@ -30,6 +30,47 @@ a one-click export to **Intapp Time** (`.TIM`).
 transcription, and the server only listens on `127.0.0.1` and rejects cross-site
 requests. Matters, time, and config live in `~/.deck-time/`, **never in this repo**.
 
+## Try it
+
+**No install:** the [hosted demo](https://claude.ai/artifact/XuRKfpickw4Z45h6o1FyNw)
+runs in any browser with fictional matters. It has a clickable Stream Deck,
+simulated dictation and a simulated teacher.
+
+**On Windows (no Stream Deck needed):**
+
+1. Install Node.js 24 LTS from [nodejs.org](https://nodejs.org) (or run
+   `winget install OpenJS.NodeJS.LTS`). On a managed work PC, ask IT.
+2. Get the code: on GitHub, use **Code → Download ZIP** and unzip it, or
+   `git clone` it.
+3. Open **Command Prompt** (not PowerShell, which may block npm's scripts) in
+   the unzipped folder and run:
+   ```bat
+   npm start
+   ```
+4. Open <http://127.0.0.1:7331> in Edge or Chrome. For a show-and-tell, go to
+   **Settings → Demo day** to swap in fictional matters. Your own data is kept
+   apart, in `%APPDATA%\deck-time`.
+5. Click the keys on the page's virtual deck (or press 1–8) to run timers, then
+   draft, split and export from the entries below. **Ctrl+C** in the Command
+   Prompt stops it.
+
+This is the full edition without dictation (dictation is set up on macOS only
+for now). The teacher works if [Ollama for Windows](https://ollama.com) is
+installed with `ollama pull gemma3:12b`. To install it as an app, use Edge's
+**⋯ → Apps → Install this site as an app**.
+
+**On Windows with a Stream Deck:** install the Stream Deck app (7.6+ for the
+Neo), then double-click `com.bsovocool.decktime.streamDeckPlugin` (see Office
+edition install below). The plugin runs deck-time itself (the office
+edition), so Node isn't needed. If `npm start` is already running, the plugin
+uses that instead.
+
+**On a Mac:** the same `npm start`, plus the optional dictation and teacher
+setup below.
+
+Windows support is written but not yet tested on a real Windows PC. If
+something doesn't work there, the Command Prompt window shows the error.
+
 ## Editions
 
 | | Full (your Mac) | Office (work PC) |
@@ -47,8 +88,9 @@ model for the teacher (see below). Skip either and everything else works.
 | Data folder | `~/.deck-time` | `%APPDATA%\deck-time` (Windows) |
 
 **Office edition install:** install the Stream Deck app, then double-click
-`com.bsovocool.decktime.streamDeckPlugin` (build it with `cd plugin && npm run
-build && npm run pack`; it lands in `dist/`). Put the **deck-time Key** action on
+`com.bsovocool.decktime.streamDeckPlugin`. To build it yourself (macOS or
+Windows): `cd plugin`, `npm install`, `npm run build`, `npm run pack`. It lands
+in `dist/`. Put the **deck-time Key** action on
 each key, press any key marked *Empty* to open the app, and arrange matters
 from the sidebar. For IT review, see [docs/IT-OVERVIEW.md](docs/IT-OVERVIEW.md).
 
@@ -61,16 +103,19 @@ separate `demo.db`) so you can show deck-time without client names on screen.
 
 ## Setup
 
-Requires Node 22.13+ (24 recommended) and macOS.
+Requires Node 22.13+ (24 recommended), on macOS or Windows.
 
 ```bash
-npm start            # companion app (full edition) → http://127.0.0.1:7331
-DECK_TIME_EDITION=office npm start   # try the office edition
-npm run demo         # same, with fictional matters in ./data/demo
+npm start              # full edition → http://127.0.0.1:7331
+npm run start:office   # the office edition (what the Stream Deck plugin runs)
+npm run demo           # fictional matters in ./data/demo, restarts on code changes
 npm test
 ```
 
-### Dictation (optional: sox + whisper.cpp)
+Options for `node companion/src/main.js`: `--edition office|full` and
+`--home <data folder>`.
+
+### Dictation (optional, macOS: sox + whisper.cpp)
 
 ```bash
 brew install sox whisper-cpp

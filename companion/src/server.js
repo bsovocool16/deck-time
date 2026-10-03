@@ -80,6 +80,8 @@ export function createServer({
     workspace: workspace?.get() ?? 'real',
     daily_target: Number(getConfig().dailyTarget) || 0,
   });
+  const inDemo = () => workspace?.get() === 'demo';
+  const shownConfig = () => (inDemo() ? { ...getConfig(), timekeeper: DEMO_TIMEKEEPER } : getConfig());
   const teacherOrFail = () => {
     if (!teacher || getConfig().features?.ai === false) throw httpError(501, 'The teacher needs the full edition (a local model through Ollama)');
     return teacher;
@@ -272,16 +274,20 @@ export function createServer({
       // Replace (not merge) the defaults so stale keys don't linger.
       setConfig({
         ...cfg,
-        timekeeper: { ...cfg.timekeeper, id: cfg.timekeeper.id || learned.timekeeperId },
+        timekeeper: { ...cfg.timekeeper, id: cfg.timekeeper.id || (inDemo() ? '' : learned.timekeeperId) },
         tim: { ...cfg.tim, defaults: learned.defaults, ssPrefix: learned.ssPrefix },
       });
       return { entries: learned.entries, timekeeperId: learned.timekeeperId, unknownVarying: learned.unknownVarying };
     }],
-    ['GET', /^\/api\/config$/, () => getConfig()],
+    // Demo day shows (and exports) a fictional timekeeper, so your real ID never
+    // appears on screen; saving Settings there leaves your real ID alone.
+    ['GET', /^\/api\/config$/, () => shownConfig()],
     ['PUT', /^\/api\/config$/, (b) => {
-      const next = deepMerge(getConfig(), b);
+      const { timekeeper, ...rest } = b;
+      const next = deepMerge(getConfig(), inDemo() ? rest : b);
       if (b.tim?.defaults) next.tim.defaults = b.tim.defaults;
-      return setConfig(next);
+      setConfig(next);
+      return shownConfig();
     }],
   ];
 

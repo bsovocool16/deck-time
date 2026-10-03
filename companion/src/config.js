@@ -44,7 +44,7 @@ export const DEFAULTS = {
   port: 7331,
   // Which optional parts are on. The office edition (inside the Stream Deck
   // plugin, for machines without a local model) turns both off.
-  features: { ai: true, dictation: true },
+  features: { ai: true, dictation: process.platform === 'darwin' }, // dictation needs sox + whisper.cpp (set up on macOS)
   workspace: 'real', // 'real' | 'demo' (fictional matters for showing people)
   embedded: true, // let the Stream Deck plugin run deck-time itself; set false where you run `npm start` instead
   edition: 'office', // what the plugin runs: 'office' (no AI or dictation) or 'full' (needs Ollama, sox and Whisper on this machine)

@@ -1,18 +1,19 @@
 {
   "name": "deck-time",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
-  "description": "Stream Deck timers + local-AI narratives + Intapp Time .tim export",
+  "description": "Stream Deck matter timers, instant narratives and Intapp Time .TIM export",
   "type": "module",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning companion/src/main.js",
+    "start:office": "node --disable-warning=ExperimentalWarning companion/src/main.js --edition office",
     "dev": "node --disable-warning=ExperimentalWarning --watch companion/src/main.js",
+    "demo": "node --disable-warning=ExperimentalWarning scripts/seed-demo.js && node --disable-warning=ExperimentalWarning --watch-path=companion/src companion/src/main.js --home data/demo",
     "test": "node --disable-warning=ExperimentalWarning --test companion/test/*.test.js",
     "tim:inspect": "node scripts/tim-inspect.js",
-    "demo": "node --disable-warning=ExperimentalWarning scripts/seed-demo.js && DECK_TIME_HOME=./data/demo node --disable-warning=ExperimentalWarning --watch-path=companion/src companion/src/main.js",
     "tim:learn": "node --disable-warning=ExperimentalWarning scripts/tim-inspect.js --apply",
     "build:demo": "node scripts/build-demo.js"
   },

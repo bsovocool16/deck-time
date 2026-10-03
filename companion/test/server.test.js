@@ -176,3 +176,24 @@ test('state carries the daily target', async () => {
   const s = await (await api('/api/state')).json();
   assert.equal(s.daily_target, 8);
 });
+
+test('demo day shows a fictional timekeeper and never overwrites the real one', async () => {
+  let cfg = deepMerge(DEFAULTS, { timekeeper: { id: '55555', name: 'Real Person' } });
+  let ws = 'demo';
+  const s = createServer({ store: new Store(':memory:', () => cfg), getConfig: () => cfg, setConfig: (c) => (cfg = c), workspace: { get: () => ws }, exportDir: os.tmpdir(), raiseWindow: async () => false });
+  await new Promise((r) => s.listen(0, '127.0.0.1', r));
+  const b = `http://127.0.0.1:${s.address().port}`;
+  try {
+    let shown = await (await fetch(`${b}/api/config`)).json();
+    assert.equal(shown.timekeeper.id, '10001');
+    // Saving Settings in demo (the form sends the shown ID back) keeps the real one.
+    shown = await (await fetch(`${b}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ timekeeper: { id: '10001' }, dailyTarget: 7 }) })).json();
+    assert.equal(shown.timekeeper.id, '10001');
+    assert.equal(cfg.timekeeper.id, '55555');
+    assert.equal(cfg.dailyTarget, 7);
+    ws = 'real';
+    assert.equal((await (await fetch(`${b}/api/config`)).json()).timekeeper.id, '55555');
+  } finally {
+    s.close();
+  }
+});
