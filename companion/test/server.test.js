@@ -166,10 +166,14 @@ test('Review key shows the open page instead of opening the default browser', as
   await reader.read(); // initial state
   r = await (await api('/api/app/show', { method: 'POST', body: { view: 'review' } })).json();
   assert.equal(r.shown, true);
-  assert.deepEqual({ ...raised.at(-1), at: 0 }, { display: 'standalone', browser: 'safari', at: 0 });
-  let text = '';
-  while (!text.includes('event: show')) text += new TextDecoder().decode((await reader.read()).value);
-  ctrl.abort();
+  try {
+    assert.equal(raised.at(-1).display, 'standalone');
+    assert.equal(raised.at(-1).browser, 'safari');
+    let text = '';
+    while (!text.includes('event: show')) text += new TextDecoder().decode((await reader.read()).value);
+  } finally {
+    ctrl.abort();
+  }
 });
 
 test('state carries the daily target', async () => {

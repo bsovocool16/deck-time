@@ -66,7 +66,16 @@ const clientMatter = (m) => [m.client_no, m.matter_no].filter(Boolean).join('-')
 
 function connect() {
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  const es = new EventSource(`/api/events${standalone ? '?display=standalone' : ''}`);
+  const params = new URLSearchParams();
+  if (standalone) params.set('display', 'standalone');
+  if (canRecord()) params.set('record', '1'); // this window can record dictation
+  const es = new EventSource(`/api/events${params.size ? `?${params}` : ''}`);
+  // Dictation (browser capture): the server asks the most recent window to record.
+  es.addEventListener('dictation', (ev) => {
+    const { action, id } = JSON.parse(ev.data);
+    if (action === 'start') startCapture(id);
+    else stopCapture(id);
+  });
   // Review key on the Stream Deck: show today's entries here.
   es.addEventListener('show', () => {
     showTab('today');
@@ -434,6 +443,145 @@ async function showDictatedNote({ text, matter_id }) {
   refreshDay(true);
 }
 
+// ---------- dictation: recording in this window ----------
+//
+// The browser records (MediaRecorder needs no click to start once the
+// microphone is allowed, unlike live audio processing), then the recording is
+// decoded and resampled to 16 kHz mono with an OfflineAudioContext and sent
+// back as a WAV for Whisper. The microphone is released after each note.
+
+const SILENCE_PEAK = 0.003; // same threshold as the server: below this, nothing was captured
+const capture = { id: null, stream: null, rec: null, chunks: [], stopped: null };
+
+function canRecord() {
+  return !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder && window.OfflineAudioContext);
+}
+
+async function openMic() {
+  return navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+}
+
+function micError(e) {
+  if (e?.name === 'NotAllowedError') return 'The browser blocked the microphone. Allow it for this site (the icon in the address bar), then try again.';
+  if (e?.name === 'NotFoundError') return 'No microphone found. Plug one in or pick an input device in your system settings.';
+  return `The microphone could not be used: ${e?.message || e}`;
+}
+
+async function startCapture(id) {
+  if (capture.id) return;
+  capture.id = id;
+  try {
+    capture.stream = await openMic();
+    capture.chunks = [];
+    capture.rec = new MediaRecorder(capture.stream);
+    capture.rec.ondataavailable = (ev) => ev.data.size && capture.chunks.push(ev.data);
+    capture.stopped = new Promise((resolve) => (capture.rec.onstop = resolve));
+    capture.rec.start(250);
+    // Stopped already (a very quick tap)? Finish right away.
+    if (capture.pendingStop === id) stopCapture(id);
+  } catch (e) {
+    releaseMic();
+    capture.id = null;
+    api('/api/dictation/fail', { method: 'POST', body: { id, error: micError(e) } }).catch(() => {});
+  }
+}
+
+async function stopCapture(id) {
+  if (capture.id !== id) return;
+  if (!capture.rec) {
+    capture.pendingStop = id; // still opening the microphone
+    return;
+  }
+  capture.pendingStop = null;
+  try {
+    if (capture.rec.state !== 'inactive') capture.rec.stop();
+    await capture.stopped;
+    const blob = new Blob(capture.chunks, { type: capture.rec.mimeType });
+    const samples = await toMono16k(await blob.arrayBuffer());
+    const wav = wavBase64(samples);
+    await api('/api/dictation/audio', { method: 'POST', body: { id, wav } });
+  } catch (e) {
+    api('/api/dictation/fail', { method: 'POST', body: { id, error: `Recording failed: ${e.message}` } }).catch(() => {});
+  } finally {
+    releaseMic();
+    Object.assign(capture, { id: null, rec: null, chunks: [], stopped: null });
+  }
+}
+
+function releaseMic() {
+  capture.stream?.getTracks().forEach((t) => t.stop());
+  capture.stream = null;
+}
+
+/** Decode any recording the browser made and resample it to 16 kHz mono (what Whisper wants). */
+async function toMono16k(buf) {
+  const decoded = await new OfflineAudioContext(1, 1, 16000).decodeAudioData(buf);
+  const frames = Math.max(1, Math.ceil(decoded.duration * 16000));
+  const ctx = new OfflineAudioContext(1, frames, 16000);
+  const src = ctx.createBufferSource();
+  src.buffer = decoded;
+  src.connect(ctx.destination); // multiple channels mix down to mono
+  src.start();
+  return (await ctx.startRendering()).getChannelData(0);
+}
+
+/** 16-bit PCM WAV, padded with a little silence (Whisper drops words spoken right at the start), as base64. */
+function wavBase64(samples, rate = 16000) {
+  const lead = Math.round(rate * 0.5);
+  const tail = Math.round(rate * 0.3);
+  const n = lead + samples.length + tail;
+  const view = new DataView(new ArrayBuffer(44 + n * 2));
+  const str = (o, t) => [...t].forEach((c, i) => view.setUint8(o + i, c.charCodeAt(0)));
+  str(0, 'RIFF');
+  view.setUint32(4, 36 + n * 2, true);
+  str(8, 'WAVE');
+  str(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  str(36, 'data');
+  view.setUint32(40, n * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const v = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + (lead + i) * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+  }
+  const bytes = new Uint8Array(view.buffer);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** Record for a moment and report the loudest sample (the microphone test). */
+async function capturePeak(ms) {
+  if (!canRecord()) throw new Error('This browser cannot record audio. Try Chrome, Edge, Safari or Firefox.');
+  let stream;
+  try {
+    stream = await openMic();
+  } catch (e) {
+    throw new Error(micError(e));
+  }
+  try {
+    const rec = new MediaRecorder(stream);
+    const chunks = [];
+    rec.ondataavailable = (ev) => ev.data.size && chunks.push(ev.data);
+    const done = new Promise((r) => (rec.onstop = r));
+    rec.start(250);
+    await new Promise((r) => setTimeout(r, ms));
+    rec.stop();
+    await done;
+    const samples = await toMono16k(await new Blob(chunks, { type: rec.mimeType }).arrayBuffer());
+    let peak = 0;
+    for (const v of samples) peak = Math.max(peak, Math.abs(v));
+    return peak;
+  } finally {
+    stream.getTracks().forEach((t) => t.stop());
+  }
+}
+
 // ---------- microphone setup ----------
 
 let micDismissed = false;
@@ -443,11 +591,18 @@ let micConfirmed = false; // set as soon as a test hears you, without waiting fo
 
 function renderMicSetup() {
   const d = state.dictation;
+  const browser = d?.capture === 'browser';
+  document.body.classList.toggle('dictation-missing', !!d?.missing);
+  document.body.classList.toggle('capture-sox', d?.capture === 'sox');
+  $('#dictation-status').textContent = d ? (d.missing ? 'not set up yet' : state.mic_verified ? 'ready' : 'test your microphone on the Today tab') : '';
+  $('#dictation-missing').hidden = !d?.missing;
+  if (d?.missing) $('#dictation-missing').textContent = `Dictation needs whisper.cpp and a speech model on this computer, and ${d.missing}. See "Dictation" in the README for the two downloads. Everything else works without it.`;
   // A silent dictation brings the card back even after "Not now".
   if (d?.error && /No sound was recorded/.test(d.error)) [micDismissed, micFailed, micConfirmed] = [false, true, false];
-  const show = !!d && !state.mic_verified && !micDismissed && !micConfirmed;
+  const show = !!d && !d.missing && !state.mic_verified && !micDismissed && !micConfirmed;
   $('#mic-setup').hidden = !show;
-  $('#mic-fix').hidden = !micFailed;
+  $('#mic-fix').hidden = !micFailed || browser;
+  $('#mic-fix-browser').hidden = !micFailed || !browser;
   if (!micTesting) $('#mic-test').textContent = micFailed ? 'Test again' : 'Test microphone';
 }
 
@@ -460,7 +615,13 @@ $('#mic-test').addEventListener('click', guard(async (ev) => {
   btn.textContent = `Listening… ${n}`;
   const tick = setInterval(() => (btn.textContent = `Listening… ${Math.max(--n, 1)}`), 1000);
   try {
-    const r = await api('/api/dictation/test', { method: 'POST', body: {} });
+    let r;
+    if (state.dictation?.capture === 'browser') {
+      // The browser asks for the microphone here (a click counts as permission to ask).
+      const peak = await capturePeak(3000);
+      r = { heard: peak >= SILENCE_PEAK, peak };
+      await api('/api/dictation/verify', { method: 'POST', body: { heard: r.heard } });
+    } else r = await api('/api/dictation/test', { method: 'POST', body: {} });
     micFailed = !r.heard;
     $('#mic-result').textContent = r.heard ? 'Microphone works. Dictation is ready.' : '';
     if (r.heard) {

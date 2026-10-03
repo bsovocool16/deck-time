@@ -4,28 +4,63 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-// Local dictation: record from the system default input with sox, transcribe
-// with whisper.cpp. Audio never leaves the machine and is deleted afterward.
+// Local dictation, transcribed with whisper.cpp. Audio never leaves the
+// machine and is deleted afterward. Two ways to capture it:
+//
+// - browser (default, macOS and Windows): the open deck-time window records
+//   with the browser's microphone permission and sends the audio back when you
+//   stop. Works no matter which app started the server (Stream Deck included).
+// - sox: the server records from the system default input itself.
 
 const MAX_MS = 5 * 60_000;
+const AUDIO_WAIT_MS = 20_000; // how long to wait for the window's recording after stop
 const SILENCE_PEAK = 0.003; // about -50 dBFS: below this, nothing was captured
 export const NO_SOUND =
   'No sound was recorded. Allow microphone access for Stream Deck (System Settings → Privacy & Security → Microphone) and check the input device in Sound settings.';
+export const NO_SOUND_BROWSER =
+  'No sound was recorded. Check that this site may use the microphone (the icon in the address bar) and that the right input device is selected and not muted.';
+export const NO_RECORDER = 'Open deck-time in your browser to dictate; it records from that window.';
 
 export class Dictation extends EventEmitter {
-  constructor({ getConfig, onText, spawnImpl = spawn }) {
+  constructor({ getConfig, onText, spawnImpl = spawn, recorders = () => 0 }) {
     super();
     this.getConfig = getConfig;
     this.onText = onText; // (text, context) => void
     this.spawn = spawnImpl;
+    this.recorders = recorders; // how many open windows can record (browser capture); the server sets this
     this.status = 'idle'; // idle | recording | transcribing
     this.error = null;
     this.startedAt = null;
     this.proc = null;
   }
 
+  /** 'browser' (the open window records) or 'sox' (the server records). */
+  get capture() {
+    return this.getConfig().dictation?.capture === 'browser' ? 'browser' : 'sox'; // the shipped default is 'browser'
+  }
+
   snapshot() {
-    return { status: this.status, error: this.error, started_at: this.startedAt, last: this.last ?? null };
+    return {
+      status: this.status,
+      error: this.error,
+      started_at: this.startedAt,
+      last: this.last ?? null,
+      capture: this.capture,
+      capture_id: this.captureId ?? null,
+      missing: this.missing(), // what's not installed yet, or null when dictation can work
+    };
+  }
+
+  /** Whisper and its model are what dictation needs on this computer (plus sox for sox capture). Cached briefly. */
+  missing() {
+    if (this.missingCache && Date.now() - this.missingCache.at < 10_000) return this.missingCache.value;
+    const cfg = this.getConfig().dictation;
+    let value = null;
+    if (!onPath(cfg.whisper)) value = 'whisper.cpp is not installed';
+    else if (!fs.existsSync(cfg.model)) value = `the Whisper model isn't at ${cfg.model}`;
+    else if (this.capture === 'sox' && !onPath(cfg.recorder)) value = 'sox is not installed';
+    this.missingCache = { at: Date.now(), value };
+    return value;
   }
 
   #set(status, error = null) {
@@ -43,6 +78,16 @@ export class Dictation extends EventEmitter {
     }
     this.file = path.join(os.tmpdir(), `deck-time-${process.pid}-${Date.now()}.wav`);
     this.context = context;
+    if (this.capture === 'browser') {
+      if (!this.recorders()) throw Object.assign(new Error(NO_RECORDER), { status: 409 });
+      this.captureId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      this.startedAt = Date.now();
+      this.timeout = setTimeout(() => this.stop().catch(() => {}), MAX_MS);
+      this.timeout.unref();
+      this.#set('recording');
+      this.emit('capture', { action: 'start', id: this.captureId });
+      return;
+    }
     // 16 kHz mono 16-bit is what whisper wants; `rec` uses the system default input.
     const env = cfg.device ? { ...process.env, AUDIODEV: cfg.device } : process.env;
     this.proc = this.spawn(cfg.recorder, ['-q', '-c', '1', '-r', '16000', '-b', '16', this.file], { env });
@@ -57,6 +102,7 @@ export class Dictation extends EventEmitter {
   }
 
   async stop() {
+    if (this.status === 'recording' && this.capture === 'browser' && this.captureId) return this.#stopBrowser();
     if (this.status !== 'recording' || !this.proc) return null;
     clearTimeout(this.timeout);
     const proc = this.proc;
@@ -91,6 +137,67 @@ export class Dictation extends EventEmitter {
     } finally {
       for (const f of [this.file, padded]) fs.rm(f, { force: true }, () => {});
     }
+  }
+
+  /** Browser capture: ask the window for its recording, then transcribe it. */
+  async #stopBrowser() {
+    clearTimeout(this.timeout);
+    const id = this.captureId;
+    this.#set('transcribing');
+    const audio = new Promise((resolve) => {
+      this.pending = { id, resolve };
+      setTimeout(() => resolve({ error: 'The deck-time window didn\'t send its recording. Is it still open?' }), AUDIO_WAIT_MS).unref();
+    });
+    this.emit('capture', { action: 'stop', id });
+    const got = await audio;
+    this.pending = null;
+    this.captureId = null;
+    if (got.error) {
+      this.#set('idle', got.error);
+      return '';
+    }
+    try {
+      fs.writeFileSync(this.file, got.wav);
+      const peak = wavPeak(got.wav);
+      if (peak !== null && peak < SILENCE_PEAK) {
+        this.#set('idle', NO_SOUND_BROWSER);
+        this.emit('nosound');
+        return '';
+      }
+      // The window already padded the start and end with a little silence.
+      const text = dropPromptEcho(await this.transcribe(this.file), this.context?.echoes ?? this.context?.prompt);
+      if (text) {
+        this.onText(text, this.context);
+        this.last = { text, matter_id: this.context?.matterId ?? null, at: Date.now() };
+      }
+      this.#set('idle', text ? null : 'Heard nothing');
+      return text;
+    } catch (e) {
+      this.#set('idle', e.message);
+      throw Object.assign(e, { status: 500 });
+    } finally {
+      fs.rm(this.file, { force: true }, () => {});
+    }
+  }
+
+  /** The window's recording (16 kHz mono WAV) for capture `id`. */
+  receiveAudio(id, wav) {
+    if (!this.pending || this.pending.id !== id) throw Object.assign(new Error('No dictation is waiting for this recording'), { status: 409 });
+    if (!Buffer.isBuffer(wav) || wav.length < 44) throw Object.assign(new Error('Not a recording'), { status: 400 });
+    this.pending.resolve({ wav });
+    return { ok: true };
+  }
+
+  /** The window couldn't record (e.g. microphone blocked). */
+  fail(id, message) {
+    const text = String(message || 'The microphone could not be used').slice(0, 300);
+    if (this.pending?.id === id) this.pending.resolve({ error: text });
+    else if (this.status === 'recording' && this.captureId === id) {
+      clearTimeout(this.timeout);
+      this.captureId = null;
+      this.#set('idle', text);
+    }
+    return { ok: true };
   }
 
   async toggle(context) {
@@ -173,7 +280,7 @@ export class Dictation extends EventEmitter {
       p.stdout.on('data', (d) => (out += d));
       p.stderr.on('data', (d) => (err += d));
       p.on('error', (e) =>
-        reject(new Error(e.code === 'ENOENT' ? `"${cfg.whisper}" not found. Install: brew install whisper-cpp` : e.message)),
+        reject(new Error(e.code === 'ENOENT' ? `"${cfg.whisper}" not found. See README → Dictation to install whisper.cpp.` : e.message)),
       );
       p.on('exit', (code) => {
         if (code === 0) return resolve(cleanTranscript(out));
@@ -183,6 +290,32 @@ export class Dictation extends EventEmitter {
       });
     });
   }
+}
+
+/** Loudest sample (0..1) in a 16-bit PCM WAV, or null if it isn't one. */
+export function wavPeak(buf) {
+  if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') return null;
+  let off = 12;
+  while (off + 8 <= buf.length) {
+    const id = buf.toString('ascii', off, off + 4);
+    const size = buf.readUInt32LE(off + 4);
+    if (id === 'data') {
+      let max = 0;
+      const end = Math.min(buf.length - 1, off + 8 + size);
+      for (let i = off + 8; i < end; i += 2) max = Math.max(max, Math.abs(buf.readInt16LE(i)));
+      return max / 32768;
+    }
+    off += 8 + size + (size % 2);
+  }
+  return null;
+}
+
+/** Is this command runnable: an existing path, or a name found on PATH (with .exe/.cmd on Windows)? */
+export function onPath(cmd) {
+  if (!cmd) return false;
+  if (path.isAbsolute(cmd) || cmd.includes('/') || cmd.includes('\\')) return fs.existsSync(cmd);
+  const exts = process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : [''];
+  return (process.env.PATH ?? '').split(path.delimiter).some((dir) => dir && exts.some((x) => fs.existsSync(path.join(dir, cmd + x))));
 }
 
 export function cleanTranscript(text) {

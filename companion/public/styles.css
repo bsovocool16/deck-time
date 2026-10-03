@@ -436,6 +436,9 @@ table.learned tr.off td { color: var(--muted); }
 table.learned tr.off .rule-to { font-weight: 400; text-decoration: line-through; }
 .settings-note { grid-column: 1 / -1; margin: 0; color: var(--ink-2); max-width: 70ch; }
 .no-dictation #dictate-btn, .no-dictation .deck-fns [data-kind="dictate"], .no-dictation .dictation-only { display: none !important; }
+/* Dictation is on but Whisper isn't installed yet: no button or setup card; Settings explains. */
+.dictation-missing #dictate-btn, .dictation-missing .deck-fns [data-kind="dictate"], .dictation-missing #mic-setup { display: none !important; }
+body:not(.capture-sox) .capture-sox, body.capture-sox .capture-browser { display: none; }
 .demo-banner { background: var(--warn); color: var(--sheet); font-size: 13px; }
 .demo-banner .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding-block: 7px; }
 .demo-banner button.link { color: inherit; text-decoration-color: currentColor; }

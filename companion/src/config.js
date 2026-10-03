@@ -39,20 +39,24 @@ export const DB_PATH = pathsFor(HOME).db;
 export const EXPORT_DIR = pathsFor(HOME).exports;
 
 const brew = (bin) => (fs.existsSync(`/opt/homebrew/bin/${bin}`) ? `/opt/homebrew/bin/${bin}` : bin);
+// Windows: whisper.cpp's release zip unpacked into the data folder's whisper\ (else whisper-cli on PATH).
+const WIN_WHISPER = path.join(HOME, 'whisper', 'whisper-cli.exe');
+const whisperBin = () => (process.platform === 'win32' ? (fs.existsSync(WIN_WHISPER) ? WIN_WHISPER : 'whisper-cli') : brew('whisper-cli'));
 
 export const DEFAULTS = {
   port: 7331,
   // Which optional parts are on. The office edition (inside the Stream Deck
   // plugin, for machines without a local model) turns both off.
-  features: { ai: true, dictation: process.platform === 'darwin' }, // dictation needs sox + whisper.cpp (set up on macOS)
+  features: { ai: true, dictation: true }, // dictation also needs whisper.cpp and a model (README → Dictation)
   workspace: 'real', // 'real' | 'demo' (fictional matters for showing people)
   embedded: true, // let the Stream Deck plugin run deck-time itself; set false where you run `npm start` instead
   edition: 'office', // what the plugin runs: 'office' (no AI or dictation) or 'full' (needs Ollama, sox and Whisper on this machine)
   deck: { columns: 4, rows: 2 }, // Stream Deck Neo
   dictation: {
-    recorder: brew('rec'), // sox; records from the macOS default input
+    capture: 'browser', // 'browser': the open deck-time window records; 'sox': the server records with sox
+    recorder: brew('rec'), // sox (capture: 'sox'); records from the system default input
     sox: brew('sox'),
-    whisper: brew('whisper-cli'), // whisper.cpp
+    whisper: whisperBin(), // whisper.cpp
     model: path.join(MODELS_DIR, 'whisper', 'ggml-small.en.bin'),
     device: '', // blank = system default input (set in System Settings → Sound)
     vocabulary: '', // comma-separated words to help transcription; blank = built-in legal terms

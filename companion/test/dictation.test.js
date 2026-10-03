@@ -163,3 +163,77 @@ test('if whisper rejects its arguments, retry once without the prompt and report
   assert.equal(whisperReason(usage, 1), 'error: unknown argument: --frobnicate');
   assert.equal(whisperReason('', 3), 'exit code 3');
 });
+
+// ---------- browser capture: the open window records ----------
+
+/** A 16-bit mono WAV of `seconds` of a tone at `level` (0..1). */
+function wav(level, seconds = 0.2, rate = 16000) {
+  const n = Math.round(rate * seconds);
+  const b = Buffer.alloc(44 + n * 2);
+  b.write('RIFF', 0);
+  b.writeUInt32LE(36 + n * 2, 4);
+  b.write('WAVEfmt ', 8);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(rate, 24);
+  b.writeUInt32LE(rate * 2, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write('data', 36);
+  b.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(Math.sin(i / 8) * level * 32767), 44 + i * 2);
+  return b;
+}
+
+function browserSetup(transcript, { windows = 1 } = {}) {
+  const { d, calls, notes } = setup(transcript);
+  d.getConfig().dictation.capture = 'browser';
+  d.recorders = () => windows;
+  const events = [];
+  d.on('capture', (e) => events.push(e));
+  return { d, calls, notes, events };
+}
+
+test('browser capture: the window records, the server transcribes; no sox involved', async () => {
+  const { d, calls, notes, events } = browserSetup(' Reviewed the disclosure schedules.\n');
+  d.start({ matterId: 4, prompt: 'Legal billing notes.' });
+  assert.equal(d.status, 'recording');
+  assert.deepEqual(events.map((e) => e.action), ['start']);
+  const id = events[0].id;
+  assert.equal(d.snapshot().capture, 'browser');
+
+  const stopping = d.stop();
+  assert.deepEqual(events.map((e) => e.action), ['start', 'stop']);
+  assert.equal(d.status, 'transcribing');
+  d.receiveAudio(id, wav(0.3));
+  assert.equal(await stopping, 'Reviewed the disclosure schedules.');
+  assert.deepEqual(notes, [['Reviewed the disclosure schedules.', 4]]);
+  assert.deepEqual(calls.map((c) => c.cmd), ['whisper-cli']); // no rec, no sox
+  assert.equal(d.status, 'idle');
+});
+
+test('browser capture: no open window, a silent recording, a blocked mic, or a stale upload', async () => {
+  let { d, events } = browserSetup('x', { windows: 0 });
+  assert.throws(() => d.start({ matterId: 1 }), /Open deck-time in your browser/);
+
+  ({ d, events } = browserSetup('should not be used'));
+  d.start({ matterId: 1 });
+  const stopping = d.stop();
+  d.receiveAudio(events[0].id, wav(0.0005));
+  assert.equal(await stopping, '');
+  assert.match(d.error, /No sound was recorded\. Check that this site may use the microphone/);
+
+  ({ d, events } = browserSetup('x'));
+  d.start({ matterId: 1 });
+  d.fail(events[0].id, 'The browser blocked the microphone.');
+  assert.equal(d.status, 'idle');
+  assert.equal(d.error, 'The browser blocked the microphone.');
+  assert.throws(() => d.receiveAudio(events[0].id, wav(0.3)), /No dictation is waiting/);
+});
+
+test('wavPeak reads the loudest sample of a WAV', async () => {
+  const { wavPeak } = await import('../src/dictation.js');
+  assert.ok(Math.abs(wavPeak(wav(0.5)) - 0.5) < 0.01);
+  assert.equal(wavPeak(Buffer.from('not a wav at all, definitely not a wav')), null);
+});

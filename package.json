@@ -1,6 +1,6 @@
 {
   "name": "deck-time",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "private": true,
   "description": "Stream Deck matter timers, instant narratives and Intapp Time .TIM export",
   "type": "module",

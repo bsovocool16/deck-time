@@ -9,7 +9,7 @@ a one-click export to **Intapp Time** (`.TIM`).
  ┌──────┬──────┬──────┬──────┐         ┌──────────────────────────────────┐
  │Acme  │Init. │Umbr. │Stark │  tap →  │ timers · notes · entries (SQLite) │
  │12:34 │ 1.5h │      │      │ ← state │ rules + phrasebook → narratives   │
- ├──────┼──────┼──────┼──────┤   SSE   │ sox + whisper.cpp → dictation     │
+ ├──────┼──────┼──────┼──────┤   SSE   │ browser mic + whisper.cpp → notes │
  │Wayne │ 🎙   │ ■    │Review│         │ export → deck-time-YYYY-MM-DD.TIM │
  └──────┴──────┴──────┴──────┘         └──────────────────────────────────┘
  [ Acme M&A   ● 12:34 ]  ← info bar                  ↓ import in Intapp Time
@@ -54,8 +54,8 @@ simulated dictation and a simulated teacher.
    draft, split and export from the entries below. **Ctrl+C** in the Command
    Prompt stops it.
 
-This is the full edition without dictation (dictation is set up on macOS only
-for now). The teacher works if [Ollama for Windows](https://ollama.com) is
+This is the full edition. Dictation works once whisper.cpp and a speech model
+are in place (two downloads; see Dictation below). The teacher works if [Ollama for Windows](https://ollama.com) is
 installed with `ollama pull gemma3:12b`. To install it as an app, use Edge's
 **⋯ → Apps → Install this site as an app**.
 
@@ -75,19 +75,20 @@ something doesn't work there, the Command Prompt window shows the error.
 
 ## Editions
 
-| | Full (your Mac) | Office (work PC) |
+| | Full (`npm start`) | Office (inside the Stream Deck plugin) |
 |---|---|---|
 | Runs as | `npm start` (Node 22.13+) | inside the Stream Deck plugin; nothing else to install |
 | Timers, keys, sidebar, notes, splits, client rules, `.TIM` export | yes | yes |
 | Instant narratives, phrasebook, task/activity codes | yes | yes |
 | Teacher (proposes drafting rules from your edits) | optional (local Ollama) | off |
-| Dictation | yes (sox + Whisper, about 0.5 to 1.6 GB model) | off |
-| Extra installs | sox, whisper.cpp and a Whisper model | none |
+| Dictation | optional (whisper.cpp + a 0.5 to 1.6 GB model; macOS or Windows) | off |
+| Extra installs | none required | none |
+| Data folder | `~/.deck-time` (macOS), `%APPDATA%\deck-time` (Windows) | same |
 
 Neither edition needs an AI model to draft, code or export. The full edition
-has two optional downloads: the Whisper model for dictation, and a local Ollama
-model for the teacher (see below). Skip either and everything else works.
-| Data folder | `~/.deck-time` | `%APPDATA%\deck-time` (Windows) |
+has two optional downloads: whisper.cpp and a speech model for dictation, and a
+local Ollama model for the teacher (see below). Skip either and everything else
+works.
 
 **Office edition install:** install the Stream Deck app, then double-click
 `com.bsovocool.decktime.streamDeckPlugin` from the
@@ -118,28 +119,59 @@ npm test
 Options for `node companion/src/main.js`: `--edition office|full` and
 `--home <data folder>`.
 
-### Dictation (optional, macOS: sox + whisper.cpp)
+### Dictation (optional, macOS and Windows)
+
+Press **Dictate** (on the deck or the page), talk, and press it again. The
+deck-time window records with your browser's microphone permission, and
+whisper.cpp transcribes the note on this computer. Audio never leaves it and is
+deleted afterward. Keep a deck-time window open (a tab or the installed app; it
+can be in the background). The first time, use **Test microphone** on the Today
+tab so the browser asks for permission.
+
+You need two things: whisper.cpp and a speech model.
+
+**macOS**
 
 ```bash
-brew install sox whisper-cpp
-mkdir -p models/whisper   # inside this repo, gitignored
-curl -L -o models/whisper/ggml-small.en.bin \
+brew install whisper-cpp
+mkdir -p ~/.deck-time/models/whisper
+curl -L -o ~/.deck-time/models/whisper/ggml-small.en.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin   # about 470 MB
 ```
 
-For better accuracy, use `ggml-large-v3-turbo.bin` (about 1.6 GB, same source)
-and set `dictation.model` to it in `~/.deck-time/config.json`; it takes about
-1.3 s per note on an M4 Pro. Settings → *Dictation* takes a list of words to
-listen for (client names, deal code names); matter names and common legal terms
-are always included.
+(Running from a copy of this repo that has a `models/` folder, deck-time looks
+in `models/whisper/` there instead.)
 
-Dictation records from the **macOS default input** (System Settings → Sound →
-Input). Pick your mic there, e.g. a DJI Mic Mini receiver. The first recording
-triggers a macOS microphone permission prompt for whatever app launched the
-server (Terminal, etc.). macOS doesn't give the microphone to the Stream Deck
-plugin's own runtime, so for dictation run `npm start` in Terminal.app and set
-`"embedded": false` (see Editions). To pin a specific device instead, set
-`dictation.device` in `~/.deck-time/config.json` to the device name.
+**Windows**
+
+1. Download `whisper-bin-x64.zip` from the
+   [whisper.cpp releases](https://github.com/ggml-org/whisper.cpp/releases).
+   Unzip it and copy the folder that contains `whisper-cli.exe` (with the
+   `.dll` files beside it) to `%APPDATA%\deck-time\whisper\`, so that
+   `%APPDATA%\deck-time\whisper\whisper-cli.exe` exists.
+2. Download
+   [`ggml-small.en.bin`](https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin)
+   (about 470 MB) to `%APPDATA%\deck-time\models\whisper\`.
+3. Restart deck-time. Until both are in place, Settings → *Dictation* says
+   what's missing, and the Dictate button stays hidden.
+
+For better accuracy, use `ggml-large-v3-turbo.bin` (about 1.6 GB, same source)
+and set `dictation.model` to its path in `config.json` in your data folder; it
+takes about 1.3 s per note on an M4 Pro. Settings → *Dictation* takes a list of
+words to listen for (client names, deal code names). Matter names and common
+legal terms are always included.
+
+The browser records from the system's default input. Pick your mic there (on a
+Mac, System Settings → Sound → Input; on Windows, Settings → System → Sound).
+In Safari, to stop it asking every session: Safari → Settings → Websites →
+Microphone → `127.0.0.1` → Allow.
+
+Because the window does the recording, dictation works however deck-time was
+started, including inside the Stream Deck plugin. The old way, where the
+server records with sox, is still there as Settings → *Dictation* → *Record
+with: the server* (macOS, `brew install sox`). macOS only gives the microphone
+to the app that launched the server, so that mode needs `npm start` in
+Terminal and `"embedded": false`.
 
 ### Stream Deck plugin
 
@@ -359,7 +391,7 @@ companion/src/     main.js (CLI entry), host.js (startup, editions, demo day),
                    server.js (HTTP + SSE), store.js (SQLite), export.js (.TIM/CSV),
                    drafter.js + phrasebook.js (instant narratives, learned edits),
                    teacher.js + ai.js (offline rule proposals via local Ollama),
-                   coder.js + codes.js (task/activity codes), dictation.js (sox +
+                   coder.js + codes.js (task/activity codes), dictation.js (browser or sox capture +
                    whisper), window.js (Review key), demo-seed.js, time.js, config.js
 companion/public/  review UI (vanilla JS), includes a clickable virtual deck
 plugin/            Stream Deck plugin (TypeScript, @elgato/streamdeck v3); hosts the

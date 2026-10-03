@@ -70,6 +70,13 @@ export function createServer({
   }
   store.on('change', () => broadcast());
   dictation?.on('change', () => broadcast());
+  // Browser capture: the most recent window that can record does the recording.
+  const recorderPages = () => [...pages].filter(([, p]) => p.record).sort((x, y) => y[1].at - x[1].at);
+  if (dictation) dictation.recorders = () => recorderPages().length;
+  dictation?.on('capture', ({ action, id }) => {
+    const targets = action === 'start' ? recorderPages().slice(0, 1) : recorderPages();
+    for (const [res] of targets) res.write(`event: dictation\ndata: ${JSON.stringify({ action, id })}\n\n`);
+  });
   // A silent recording means the microphone needs attention again.
   dictation?.on('nosound', () => setConfig(deepMerge(getConfig(), { dictation: { verified: false } })));
   const fullState = () => ({
@@ -225,8 +232,25 @@ export function createServer({
       return { mode: 'estimate', total_hours: totalHours, entries: sized.map((c) => withCodes({ ...c, draft: c.narrative })) };
     }],
     ['POST', /^\/api\/entries\/(\d{4}-\d{2}-\d{2})\/(\d+)\/split\/apply$/, (b, _, [date, id]) => store.applySplit(date, +id, b.entries)],
+    // Browser capture: the window sends its recording, or says why it couldn't record.
+    ['POST', /^\/api\/dictation\/audio$/, (b) => {
+      if (!dictation) throw httpError(501, 'Dictation not available');
+      return dictation.receiveAudio(String(b.id ?? ''), Buffer.from(String(b.wav ?? ''), 'base64'));
+    }],
+    ['POST', /^\/api\/dictation\/fail$/, (b) => {
+      if (!dictation) throw httpError(501, 'Dictation not available');
+      return dictation.fail(String(b.id ?? ''), b.error);
+    }],
+    // Browser capture: the window tested the microphone itself.
+    ['POST', /^\/api\/dictation\/verify$/, (b) => {
+      if (!dictation) throw httpError(501, 'Dictation not available');
+      setConfig(deepMerge(getConfig(), { dictation: { verified: b.heard === true } }));
+      broadcast();
+      return { ok: true };
+    }],
     ['POST', /^\/api\/dictation\/test$/, async () => {
       if (!dictation) throw httpError(501, 'Dictation is not available in this edition');
+      if (dictation.capture === 'browser') throw httpError(400, 'The microphone is tested from the deck-time window');
       const result = await dictation.testMic(3);
       setConfig(deepMerge(getConfig(), { dictation: { verified: result.heard } }));
       broadcast();
@@ -334,7 +358,12 @@ export function createServer({
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
         res.write(`data: ${JSON.stringify(fullState())}\n\n`);
         clients.add(res);
-        pages.set(res, { display: url.searchParams.get('display') === 'standalone' ? 'standalone' : 'browser', browser: browserOf(req.headers['user-agent']), at: Date.now() });
+        pages.set(res, {
+          display: url.searchParams.get('display') === 'standalone' ? 'standalone' : 'browser',
+          browser: browserOf(req.headers['user-agent']),
+          record: url.searchParams.get('record') === '1', // this window can record dictation
+          at: Date.now(),
+        });
         req.on('close', () => {
           clients.delete(res);
           pages.delete(res);
@@ -345,7 +374,9 @@ export function createServer({
       for (const [method, pattern, handler] of routes) {
         const m = url.pathname.match(pattern);
         if (!m || method !== req.method) continue;
-        const body = method === 'GET' || method === 'DELETE' ? {} : await readJson(req);
+        // A dictation recording (base64 WAV, up to 5 minutes) is the one large body.
+        const limit = url.pathname === '/api/dictation/audio' ? 25_000_000 : 1_000_000;
+        const body = method === 'GET' || method === 'DELETE' ? {} : await readJson(req, limit);
         const result = await handler(body, url.searchParams, m.slice(1));
         return send(res, 200, result ?? { ok: true });
       }
@@ -392,7 +423,7 @@ function guardOrigin(req) {
   if (origin !== `http://${host}`) throw httpError(403, 'Cross-origin request blocked');
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 1_000_000) {
   if (!/application\/json/.test(req.headers['content-type'] ?? '')) {
     // Requiring JSON forces a CORS preflight for browser requests, which we never approve.
     throw httpError(415, 'Content-Type must be application/json');
@@ -400,7 +431,7 @@ async function readJson(req) {
   let raw = '';
   for await (const chunk of req) {
     raw += chunk;
-    if (raw.length > 1_000_000) throw httpError(413, 'Body too large');
+    if (raw.length > limit) throw httpError(413, 'Body too large');
   }
   try {
     return raw ? JSON.parse(raw) : {};

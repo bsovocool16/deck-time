@@ -77,10 +77,18 @@
           <h2 id="mic-setup-title">Set up dictation</h2>
           <button type="button" class="link" id="mic-dismiss">Not now</button>
         </div>
-        <p id="mic-intro">Dictation needs permission to use your microphone. Click <strong>Test microphone</strong> and say a few words. If your Mac asks whether <strong>Stream Deck</strong> can use the microphone, choose <strong>Allow</strong>.</p>
+        <p id="mic-intro">Dictation needs permission to use your microphone. Click <strong>Test microphone</strong> and say a few words. <span class="capture-browser">When your browser asks whether this site can use the microphone, choose <strong>Allow</strong>. deck-time records from this window, so keep it open (it can be in the background).</span><span class="capture-sox">If your Mac asks whether <strong>Stream Deck</strong> can use the microphone, choose <strong>Allow</strong>.</span></p>
         <div class="mic-actions">
           <button type="button" class="primary" id="mic-test">Test microphone</button>
           <span id="mic-result" class="mic-result" aria-live="polite"></span>
+        </div>
+        <div id="mic-fix-browser" class="mic-fix" hidden>
+          <p><strong>No sound came through.</strong> To fix it:</p>
+          <ol>
+            <li>Click the microphone or site-settings icon in the address bar and allow the microphone for this site.</li>
+            <li>Check that the system lets your browser use the microphone: on a Mac, System Settings → Privacy &amp; Security → Microphone; on Windows, Settings → Privacy &amp; security → Microphone (including "Let desktop apps access your microphone").</li>
+            <li>Check that the right input device is selected and not muted, then test again.</li>
+          </ol>
         </div>
         <div id="mic-fix" class="mic-fix" hidden>
           <p><strong>No sound came through.</strong> To fix it:</p>
@@ -280,7 +288,14 @@
           <small>Export a few months of your time from Intapp Time and choose the files. Only narratives and codes are kept, in code-memory.jsonl in your data folder.</small>
         </label>
 
-        <h3 class="dictation-only">Dictation</h3>
+        <h3 class="dictation-only">Dictation <span id="dictation-status" class="status"></span></h3>
+        <p class="wide dictation-only settings-note" id="dictation-missing" hidden></p>
+        <label class="dictation-only">Record with
+          <select name="dictation.capture">
+            <option value="browser">This window (browser microphone)</option>
+            <option value="sox">The server (sox, macOS)</option>
+          </select>
+        </label>
         <label class="wide dictation-only">Words to listen for (comma-separated)
           <textarea name="dictation.vocabulary" rows="3" placeholder="Leave blank for built-in legal terms (disclosure schedules, indemnification, interrogatories…). Your matter names are always included."></textarea>
           <small>Helps the transcriber spell names and terms of art correctly: client and counterparty names, deal code names, defined terms.</small>
