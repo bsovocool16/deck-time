@@ -60,8 +60,10 @@ installed with `ollama pull gemma3:12b`. To install it as an app, use Edge's
 **⋯ → Apps → Install this site as an app**.
 
 **On Windows with a Stream Deck:** install the Stream Deck app (7.6+ for the
-Neo), then double-click `com.bsovocool.decktime.streamDeckPlugin` (see Office
-edition install below). The plugin runs deck-time itself (the office
+Neo), then download
+[`com.bsovocool.decktime.streamDeckPlugin`](https://github.com/bsovocool16/deck-time/releases/latest/download/com.bsovocool.decktime.streamDeckPlugin)
+from the [latest release](https://github.com/bsovocool16/deck-time/releases/latest)
+and double-click it. The plugin runs deck-time itself (the office
 edition), so Node isn't needed. If `npm start` is already running, the plugin
 uses that instead.
 
@@ -88,7 +90,8 @@ model for the teacher (see below). Skip either and everything else works.
 | Data folder | `~/.deck-time` | `%APPDATA%\deck-time` (Windows) |
 
 **Office edition install:** install the Stream Deck app, then double-click
-`com.bsovocool.decktime.streamDeckPlugin`. To build it yourself (macOS or
+`com.bsovocool.decktime.streamDeckPlugin` from the
+[latest release](https://github.com/bsovocool16/deck-time/releases/latest). To build it yourself (macOS or
 Windows): `cd plugin`, `npm install`, `npm run build`, `npm run pack`. It lands
 in `dist/`. Put the **deck-time Key** action on
 each key, press any key marked *Empty* to open the app, and arrange matters
