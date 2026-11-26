@@ -36,6 +36,17 @@ requests. Matters, time, and config live in `~/.deck-time/`, **never in this rep
 runs in any browser with fictional matters. It has a clickable Stream Deck,
 simulated dictation and a simulated teacher.
 
+**As a desktop app (macOS or Windows, nothing to install but Claude):** open the
+[deck-time app](https://claude.ai/artifact/Qkbuqn8gZRVYeFM2oiXe9j) in the Claude
+desktop app and choose **Install as app**. It's this same companion running in
+its own window: your data stays in `~/.deck-time-app` (Windows:
+`%APPDATA%\deck-time-app`), exports land there and in Downloads, the running
+timer shows in the menu bar (Windows: system tray), and Control+Shift+1 to 8
+press the deck's keys from any app. On first run it offers to copy your existing
+`~/.deck-time` data. Dictation and the teacher work if whisper.cpp and Ollama
+are installed, as below. It doesn't talk to the Stream Deck plugin. Build it
+with `cd app && npm install && npm run build` (see `app/build.js`).
+
 **On Windows (no Stream Deck needed):**
 
 1. Install Node.js 24 LTS from [nodejs.org](https://nodejs.org) (or run

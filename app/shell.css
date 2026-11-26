@@ -1,0 +1,62 @@
+/* ---------- app shell: start screens, dialogs, desktop window ---------- */
+html, body { background: var(--paper); }
+.shell { min-height: 100vh; min-height: 100svh; display: grid; place-items: center; padding: 48px max(5vw, 16px); background: var(--paper); }
+.shell[hidden] { display: none !important; }
+.shell-card { width: min(560px, 100%); display: grid; justify-items: start; gap: 4px; }
+.shell-icon { width: 88px; height: 88px; margin-bottom: 18px; filter: drop-shadow(0 6px 14px rgb(0 0 0 / .18)); }
+.shell-title { font-size: 40px; line-height: 1.05; letter-spacing: -.02em; margin: 0 0 10px; font-weight: 700; color: var(--ink); }
+.shell-screen { display: none; width: 100%; }
+.shell[data-screen="loading"] [data-for="loading"],
+.shell[data-screen="welcome"] [data-for="welcome"],
+.shell[data-screen="allow"] [data-for="allow"],
+.shell[data-screen="import"] [data-for="import"],
+.shell[data-screen="denied"] [data-for="denied"],
+.shell[data-screen="error"] [data-for="error"] { display: block; }
+.shell-lede { font-size: 17px; line-height: 1.5; color: var(--ink-2); margin: 0 0 22px; max-width: 34em; }
+.shell-list { margin: 0 0 24px; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
+.shell-list li { padding: 11px 0; border-bottom: 1px solid var(--rule); color: var(--ink-2); line-height: 1.45; }
+.shell-list strong { color: var(--ink); font-weight: 600; }
+.shell-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.shell-fine { font-size: 13px; color: var(--muted); margin: 0; max-width: 40em; line-height: 1.5; }
+.shell-warn { font-size: 14px; color: var(--warn); border-left: 3px solid var(--warn); padding: 4px 0 4px 12px; margin: 0 0 18px; line-height: 1.5; }
+.shell-error { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 var(--mono); background: var(--sheet); border: 1px solid var(--rule); padding: 12px; margin: 0 0 18px; color: var(--danger); }
+.shell code, #desktop-settings code { font: 13px var(--mono); background: var(--hover); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.shell[data-screen="loading"] .shell-lede::after { content: ""; display: inline-block; width: 1em; animation: dt-dots 1.2s steps(4) infinite; overflow: hidden; vertical-align: bottom; }
+@keyframes dt-dots { from { width: 0; } to { width: 1em; } }
+@media (prefers-reduced-motion: reduce) { .shell[data-screen="loading"] .shell-lede::after { animation: none; } }
+
+#app-root[hidden] { display: none !important; }
+
+/* Try-it bar */
+.try-bar { background: var(--ink); color: var(--paper); font-size: 13px; }
+.try-bar .wrap { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding-block: 8px; }
+.try-bar .link { color: var(--paper); text-decoration: underline; }
+.is-try #demo-banner { display: none !important; }
+
+/* In-page confirm */
+.ask { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgb(0 0 0 / .32); }
+.ask[hidden] { display: none !important; }
+.ask-card { width: min(460px, 100%); background: var(--sheet); color: var(--ink); border: 1px solid var(--rule-strong); border-radius: 8px; padding: 20px 20px 16px; box-shadow: 0 18px 40px rgb(0 0 0 / .22); }
+.ask-card p { margin: 0 0 18px; white-space: pre-line; line-height: 1.5; }
+.ask-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Export saved */
+.saved { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 55; display: flex; gap: 10px; align-items: center; max-width: min(520px, calc(100vw - 32px)); background: var(--ink); color: var(--paper); border-radius: 8px; padding: 10px 10px 10px 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .25); }
+.saved[hidden] { display: none !important; }
+.saved-text { display: grid; min-width: 0; font-size: 13px; }
+.saved-text span { opacity: .75; overflow-wrap: anywhere; font-family: var(--mono); font-size: 12px; }
+.saved button { background: transparent; color: var(--paper); border-color: color-mix(in srgb, var(--paper) 35%, transparent); white-space: nowrap; }
+.saved button.quiet { border: 0; font-size: 18px; padding: 2px 8px; }
+
+/* Settings → This app */
+#desktop-settings .ds-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+#desktop-settings kbd { font: 12px var(--mono); border: 1px solid var(--rule-strong); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: var(--sheet); }
+
+/* The installed app's window: on macOS the title bar is hidden, so the top bar drags the window
+   and leaves room for the traffic lights. */
+.is-app .topbar { app-region: drag; -webkit-app-region: drag; user-select: none; }
+.is-app .topbar button, .is-app .topbar a, .is-app .topbar input, .is-app .topbar nav { app-region: no-drag; -webkit-app-region: no-drag; }
+.is-mac .topbar .wrap { padding-left: max(84px, var(--page-pad, 32px)); }
+.is-mac .demo-banner:not([hidden]) .wrap { padding-left: max(84px, var(--page-pad, 32px)); }
+.is-mac .demo-banner:not([hidden]) { app-region: drag; -webkit-app-region: drag; }
+.is-mac .demo-banner button { app-region: no-drag; -webkit-app-region: no-drag; }

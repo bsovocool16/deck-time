@@ -1,0 +1,81 @@
+<div id="shell" class="shell" data-screen="loading">
+  <div class="shell-card">
+    <canvas id="shell-icon" class="shell-icon" width="256" height="256" aria-hidden="true"></canvas>
+    <h1 class="shell-title">deck-time</h1>
+
+    <div class="shell-screen" data-for="loading">
+      <p class="shell-lede" id="shell-loading">Opening…</p>
+    </div>
+
+    <div class="shell-screen" data-for="welcome">
+      <p class="shell-lede">Matter timers, instant billing narratives and task codes, exported for Intapp Time. Everything stays on your computer.</p>
+      <div class="shell-actions">
+        <button type="button" class="primary" id="shell-install" hidden>Install as app</button>
+        <button type="button" id="shell-try">Try it here</button>
+      </div>
+      <p class="shell-fine" id="shell-install-note">Install it from the Claude desktop app to get its own window, a timer in the menu bar, and keyboard shortcuts that work from any app. Trying it here uses fictional matters, and nothing is saved.</p>
+    </div>
+
+    <div class="shell-screen" data-for="allow">
+      <p class="shell-lede">deck-time keeps your matters, time and settings in a folder on this computer, and runs whisper.cpp and Ollama there if you have them. Nothing goes anywhere else.</p>
+      <ul class="shell-list">
+        <li><strong>Your files:</strong> a data folder, <code id="shell-home">~/.deck-time-app</code>, plus a copy of each export in Downloads.</li>
+        <li><strong>Menu bar:</strong> the running matter and its clock.</li>
+        <li><strong>Shortcuts:</strong> Control+Shift+1 to 8 press the deck's keys from any app.</li>
+        <li><strong>Notifications:</strong> a nudge if a timer ran all night.</li>
+      </ul>
+      <div class="shell-actions">
+        <button type="button" class="primary" id="shell-allow">Allow and open</button>
+      </div>
+      <p class="shell-fine">Claude asks you to confirm. You can change each one later in Settings.</p>
+    </div>
+
+    <div class="shell-screen" data-for="import">
+      <p class="shell-lede">deck-time is already set up on this computer, in <code id="shell-full-home">~/.deck-time</code>. Bring your matters, time, settings and learned phrasing into the app?</p>
+      <p class="shell-warn" id="shell-import-warn" hidden>deck-time looks like it's still running (from <code>npm start</code> or the Stream Deck app). Quit it first so its latest changes are included, then copy. Or copy now and leave the newest changes behind.</p>
+      <div class="shell-actions">
+        <button type="button" class="primary" id="shell-import">Copy my data</button>
+        <button type="button" id="shell-fresh">Start fresh</button>
+      </div>
+      <p class="shell-fine">Your existing folder is only read, never changed. The app keeps its own copy from then on.</p>
+    </div>
+
+    <div class="shell-screen" data-for="denied">
+      <p class="shell-lede">deck-time needs access to a folder on this computer to keep your time.</p>
+      <div class="shell-actions">
+        <button type="button" class="primary" id="shell-manage">Open permissions</button>
+        <button type="button" id="shell-try-2">Try it without saving</button>
+      </div>
+      <p class="shell-fine" id="shell-denied-why">Turn on full access for deck-time, then reopen the app.</p>
+    </div>
+
+    <div class="shell-screen" data-for="error">
+      <p class="shell-lede">deck-time couldn't start.</p>
+      <pre class="shell-error" id="shell-error"></pre>
+      <div class="shell-actions"><button type="button" id="shell-retry">Try again</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="try-bar" class="try-bar" hidden>
+  <div class="wrap">
+    <span><strong>Trying deck-time</strong> with fictional matters. Nothing is kept after you close this page.</span>
+    <button type="button" class="link" id="try-install" hidden>Install as app</button>
+  </div>
+</div>
+
+<div id="ask" class="ask" role="alertdialog" aria-modal="true" aria-labelledby="ask-text" hidden>
+  <div class="ask-card">
+    <p id="ask-text"></p>
+    <div class="ask-actions">
+      <button type="button" id="ask-no" class="quiet">Cancel</button>
+      <button type="button" id="ask-yes" class="primary">Continue</button>
+    </div>
+  </div>
+</div>
+
+<div id="saved" class="saved" role="status" hidden>
+  <div class="saved-text"><strong id="saved-title"></strong><span id="saved-path"></span></div>
+  <button type="button" id="saved-show">Show</button>
+  <button type="button" id="saved-close" class="quiet" aria-label="Close">×</button>
+</div>
