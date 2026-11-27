@@ -38,14 +38,15 @@ simulated dictation and a simulated teacher.
 
 **As a desktop app (macOS or Windows, nothing to install but Claude):** open the
 [deck-time app](https://claude.ai/artifact/Qkbuqn8gZRVYeFM2oiXe9j) in the Claude
-desktop app and choose **Install as app**. It's this same companion running in
-its own window: your data stays in `~/.deck-time-app` (Windows:
-`%APPDATA%\deck-time-app`), exports land there and in Downloads, the running
-timer shows in the menu bar (Windows: system tray), and Control+Shift+1 to 8
-press the deck's keys from any app. On first run it offers to copy your existing
-`~/.deck-time` data. Dictation and the teacher work if whisper.cpp and Ollama
-are installed, as below. It doesn't talk to the Stream Deck plugin. Build it
-with `cd app && npm install && npm run build` (see `app/build.js`).
+desktop app and choose **Install as app**. With the Stream Deck plugin (or
+`npm start`) running, the app is a window onto that deck-time: same data in
+`~/.deck-time`, and the physical keys and the window stay in step. Without it,
+the app runs the companion itself, with its own data in `~/.deck-time-app`
+(Windows: `%APPDATA%\deck-time-app`), and offers to copy your `~/.deck-time`
+data on first run. Either way exports also land in Downloads, the running timer
+shows in the menu bar (Windows: system tray), and Control+Shift+1 to 8 press the
+deck's keys from any app. Build it with `cd app && npm install && npm run build`
+(see `app/build.js`).
 
 **On Windows (no Stream Deck needed):**
 

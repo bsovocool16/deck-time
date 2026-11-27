@@ -11,6 +11,7 @@ html, body { background: var(--paper); }
 .shell[data-screen="allow"] [data-for="allow"],
 .shell[data-screen="import"] [data-for="import"],
 .shell[data-screen="denied"] [data-for="denied"],
+.shell[data-screen="waiting"] [data-for="waiting"],
 .shell[data-screen="error"] [data-for="error"] { display: block; }
 .shell-lede { font-size: 17px; line-height: 1.5; color: var(--ink-2); margin: 0 0 22px; max-width: 34em; }
 .shell-list { margin: 0 0 24px; padding: 0; list-style: none; border-top: 1px solid var(--rule); }
@@ -60,3 +61,5 @@ html, body { background: var(--paper); }
 .is-mac .demo-banner:not([hidden]) .wrap { padding-left: max(84px, var(--page-pad, 32px)); }
 .is-mac .demo-banner:not([hidden]) { app-region: drag; -webkit-app-region: drag; }
 .is-mac .demo-banner button { app-region: no-drag; -webkit-app-region: no-drag; }
+
+.link-bar { position: sticky; top: 0; z-index: 40; background: var(--warn); color: #fff; }

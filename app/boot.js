@@ -140,7 +140,7 @@
 
   async function exported(out) {
     const n = `${out.count} entr${out.count === 1 ? 'y' : 'ies'}`;
-    if (mode === 'local') {
+    if (mode === 'local' || mode === 'client') {
       const copy = `${downloadsDir}/${out.filename}`;
       let where = out.savedTo;
       try {
@@ -288,8 +288,110 @@
     }
   }
 
+  // ---------- client mode: a window onto the deck-time the Stream Deck plugin runs ----------
+  //
+  // The Stream Deck plugin runs the companion itself (or uses `npm start`) and
+  // talks to it at 127.0.0.1:7331. A page can't open a port, and its own fetch
+  // can't reach localhost, so the app reaches that companion through curl,
+  // which the desktop API can run. Same data (~/.deck-time), same live state,
+  // so the physical keys and this window stay in step.
+  const COMPANION = 'http://127.0.0.1:7331';
+  const curlBin = () => (rt.platform === 'win32' ? 'curl.exe' : 'curl');
+
+  function curl(args, input) {
+    return new Promise((resolve, reject) => {
+      const p = desktop.childProcess.spawn(curlBin(), args, {});
+      let out = '';
+      let err = '';
+      p.stdout.on('data', (d) => (out += d));
+      p.stderr.on('data', (d) => (err += d));
+      p.on('error', reject);
+      p.on('exit', (code) => (code === 0 ? resolve(out) : reject(new Error(err.trim() || `curl exited ${code}`))));
+      if (input != null) p.stdin.write(input).then(() => p.stdin.end()).catch(() => {});
+      else p.stdin.end().catch(() => {});
+    });
+  }
+
+  const companionUp = () =>
+    curl(['-s', '-o', rt.platform === 'win32' ? 'NUL' : '/dev/null', '-w', '%{http_code}', '-m', '2', `${COMPANION}/api/state`]).then(
+      (code) => code.trim() === '200',
+      () => false,
+    );
+
+  function clientServer() {
+    return {
+      async request(method, url, body) {
+        const args = ['-s', '-S', '-X', method, '-H', 'Content-Type: application/json', '-w', '\n%{http_code}', '-m', '600'];
+        if (body) args.push('--data-binary', '@-');
+        args.push(COMPANION + url);
+        try {
+          const out = await curl(args, body || null);
+          const cut = out.lastIndexOf('\n');
+          return { status: +out.slice(cut + 1) || 502, body: out.slice(0, cut) };
+        } catch (e) {
+          return { status: 502, body: JSON.stringify({ error: 'deck-time is not running. Open the Stream Deck app (or npm start) and try again.' }) };
+        }
+      },
+      subscribe(url, onChunk) {
+        let closed = false;
+        let proc = null;
+        let down = 0;
+        const open = () => {
+          if (closed) return;
+          proc = desktop.childProcess.spawn(curlBin(), ['-s', '-N', `${COMPANION}${url}`], {});
+          proc.stdout.on('data', (d) => {
+            down = 0;
+            setLink(true);
+            // The Review key: bring this window forward.
+            if (d.includes('event: show')) desktop.window.show().catch(() => {});
+            onChunk(d);
+          });
+          proc.on('error', () => {});
+          proc.on('exit', () => {
+            if (closed) return;
+            if (++down > 1) setLink(false);
+            setTimeout(open, Math.min(1000 * down, 5000));
+          });
+        };
+        open();
+        return () => {
+          closed = true;
+          proc?.kill().catch(() => {});
+        };
+      },
+    };
+  }
+
+  function setLink(up) {
+    const bar = $('#link-bar');
+    if (bar) bar.hidden = up;
+  }
+
+  async function bootClient({ fullHome }) {
+    mode = 'client';
+    rt.env = { ...rt.env, DECK_TIME_HOME: fullHome };
+    homeShown = rt.platform === 'win32' ? '%APPDATA%\\deck-time' : '~/.deck-time';
+    resolveReady(clientServer());
+    reveal();
+    afterStart(rt.homeApp);
+  }
+
+  function waitForCompanion(fullHome) {
+    show('waiting');
+    $('#shell-standalone').onclick = async () => {
+      prefs.standalone = true;
+      await savePrefsTo(rt.homeApp);
+      location.reload();
+    };
+    const tick = async () => {
+      if (mode) return;
+      if (await companionUp()) return bootClient({ fullHome });
+      setTimeout(tick, 2000);
+    };
+    tick();
+  }
+
   async function bootLocal() {
-    mode = 'local';
     show('loading');
     try {
       const platform = await desktop.os.platform();
@@ -312,7 +414,15 @@
           window.dispatchEvent(new CustomEvent('deck-persist-error', { detail: e }));
         },
         showWindow: () => desktop.window.show(),
+        homeApp: home,
       });
+      prefs = { ...PREFS, ...(await desktop.fs.readFile(`${home}/app.json`, 'utf8').then(JSON.parse).catch(() => ({}))) };
+      if (!prefs.standalone) {
+        if (await companionUp()) return bootClient({ fullHome });
+        // deck-time is set up here (Stream Deck plugin or npm start) but not running yet.
+        if (await desktop.fs.exists(`${fullHome}/deck-time.db`)) return waitForCompanion(fullHome);
+      }
+      mode = 'local';
 
       await desktop.fs.mkdir(home, { recursive: true });
       const fresh = !(await desktop.fs.exists(`${home}/deck-time.db`));
@@ -373,7 +483,7 @@
   const perm = async (name) => (desktop?.permissions ? desktop.permissions.state(name).catch(() => 'unavailable') : 'unavailable');
 
   async function afterStart(home) {
-    prefsFile = `${home}/app.json`;
+    prefsFile = `${rt.homeApp ?? home}/app.json`;
     prefs = { ...PREFS, ...(await desktop.fs.readFile(prefsFile, 'utf8').then(JSON.parse).catch(() => ({}))) };
     document.documentElement.classList.add('is-app', `is-${rt.platform === 'win32' ? 'win' : 'mac'}`);
     window.addEventListener('pagehide', () => rt.saveAll?.());
@@ -404,6 +514,7 @@
   }
 
   const savePrefs = () => desktop.fs.writeFile(prefsFile, JSON.stringify(prefs, null, 2), 'utf8').catch(() => {});
+  const savePrefsTo = (home) => desktop.fs.mkdir(home, { recursive: true }).then(() => desktop.fs.writeFile(`${home}/app.json`, JSON.stringify(prefs, null, 2), 'utf8')).catch(() => {});
 
   async function applyExtras() {
     if (prefs.tray && (await perm('menu-bar')) === 'granted') {
@@ -494,7 +605,7 @@
   function desktopSettings() {
     const box = $('#desktop-settings');
     if (!box) return;
-    if (mode !== 'local') {
+    if (mode === 'try') {
       box.innerHTML = `<h3>Install as an app</h3><p class="wide">This copy runs in the page and forgets everything when you close it. Installed from the Claude desktop app, deck-time keeps your time in a folder on your computer, shows the running timer in the menu bar, and takes keyboard shortcuts from any app.</p><div class="wide"><button type="button" class="primary" id="ds-install" hidden>Install as app</button></div>`;
       wireInstall($('#ds-install'));
       return;
@@ -502,12 +613,20 @@
     box.innerHTML = `
       <h3>This app</h3>
       <div class="wide ds-row"><span>Your matters, time and settings are in <code id="ds-home"></code>. Exports go there and to Downloads.</span><button type="button" id="ds-folder">Show folder</button></div>
+      <label class="check wide"><input type="checkbox" id="ds-deck"> Work with the Stream Deck: use the deck-time the Stream Deck app runs, and its data in <code>${rt.platform === 'win32' ? '%APPDATA%\\deck-time' : '~/.deck-time'}</code></label>
+      <p class="wide settings-note">${mode === 'client' ? 'Connected. The physical keys and this window show the same timers. Dictation and the teacher follow that deck-time: set "edition": "full" in its config.json to turn them on there.' : 'Off: this app keeps its own data and the Stream Deck keys don\'t reach it.'}</p>
       <label class="check wide"><input type="checkbox" id="ds-tray"> Show the running timer in the ${rt.platform === 'win32' ? 'system tray' : 'menu bar'}</label>
       <label class="check wide"><input type="checkbox" id="ds-shortcuts"> Keyboard shortcuts from any app: <kbd>Control</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> to <kbd>8</kbd> press keys 1 to 8</label>
       <label class="check wide"><input type="checkbox" id="ds-notify"> Notify me when a timer ran overnight</label>
       <p class="wide settings-note" id="ds-perm-note" hidden></p>
       <div class="wide"><button type="button" id="ds-manage" class="quiet">App permissions…</button></div>`;
     $('#ds-home').textContent = homeShown;
+    $('#ds-deck').checked = !prefs.standalone;
+    $('#ds-deck').onchange = async () => {
+      prefs.standalone = !$('#ds-deck').checked;
+      await savePrefsTo(rt.homeApp);
+      location.reload();
+    };
     $('#ds-folder').onclick = () => desktop.shell.openPath(rt.env.DECK_TIME_HOME).catch(() => desktop.shell.showItemInFolder(`${rt.env.DECK_TIME_HOME}/config.json`).catch(() => {}));
     $('#ds-manage').onclick = () => desktop.permissions.manage().then(() => applyExtras().then(desktopSettings)).catch(() => {});
     const wire = (id, key, permName) => {

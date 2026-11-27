@@ -40,6 +40,14 @@
       <p class="shell-fine">Your existing folder is only read, never changed. The app keeps its own copy from then on.</p>
     </div>
 
+    <div class="shell-screen" data-for="waiting">
+      <p class="shell-lede">Waiting for deck-time. It runs inside the Stream Deck app (or <code>npm start</code>). Open Stream Deck and this window connects by itself, with your matters, time and physical keys.</p>
+      <div class="shell-actions">
+        <button type="button" id="shell-standalone">Use the app on its own</button>
+      </div>
+      <p class="shell-fine">On its own, the app keeps separate data in its own folder and the Stream Deck keys don't reach it. You can switch back in Settings.</p>
+    </div>
+
     <div class="shell-screen" data-for="denied">
       <p class="shell-lede">deck-time needs access to a folder on this computer to keep your time.</p>
       <div class="shell-actions">
@@ -62,6 +70,10 @@
     <span><strong>Trying deck-time</strong> with fictional matters. Nothing is kept after you close this page.</span>
     <button type="button" class="link" id="try-install" hidden>Install as app</button>
   </div>
+</div>
+
+<div id="link-bar" class="try-bar link-bar" hidden>
+  <div class="wrap"><span><strong>Lost touch with deck-time.</strong> Is the Stream Deck app running? Reconnecting…</span></div>
 </div>
 
 <div id="ask" class="ask" role="alertdialog" aria-modal="true" aria-labelledby="ask-text" hidden>
