@@ -23,3 +23,6 @@ models/
 demo/build/
 plugin/com.bsovocool.decktime.sdPlugin/app/
 plugin/sim-out/
+
+# Built desktop-app page
+app/build/

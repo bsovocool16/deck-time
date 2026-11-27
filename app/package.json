@@ -1,0 +1,16 @@
+{
+  "name": "deck-time-app",
+  "private": true,
+  "type": "module",
+  "description": "Builds deck-time as one self-contained page that installs as a desktop app from Claude",
+  "scripts": {
+    "build": "node build.js"
+  },
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "esbuild": "^0.25.10",
+    "events": "^3.3.0",
+    "path-browserify": "^1.0.1",
+    "sql.js": "^1.13.0"
+  }
+}
